@@ -110,7 +110,7 @@ _VERIFIER_AVAILABLE = False
 detect_scientific_names = None
 verify_occurrences_with_fallback = None
 try:
-    from biotrace_unified_verifier import BioTraceUnifiedVerifier
+    from biotrace_unified_verifier import UnifiedTaxonVerifier as BioTraceUnifiedVerifier
 
     def verify_occurrences_with_fallback(*args, **kwargs):
         pass
