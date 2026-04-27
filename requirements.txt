@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  BioTrace v5.4 — pip requirements
+#
+#  CUDA 13 NOTE: Install PyTorch FIRST with the cu121 index before running
+#  pip install -r requirements.txt:
+#
+#    pip install torch torchvision torchaudio \
+#        --index-url https://download.pytorch.org/whl/cu121
+#
+#  CUDA 13 drivers (release 530+) are backward-compatible with CUDA 12.1 runtime.
+#  spaCy and taxonerd are intentionally absent — their compiled CUDA extensions
+#  fail on CUDA 13. All NER is handled via transformers + torch (biotrace_hf_ner.py).
+#
+#  Install order:
+#    1. conda env create -f environment.yml   (preferred — handles torch + CUDA)
+#       OR
+#       pip install torch --index-url https://download.pytorch.org/whl/cu121
+#    2. pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Web / app framework ───────────────────────────────────────────────────────
+streamlit>=1.35.0
+requests>=2.31.0
+urllib3>=2.0.0
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+pandas>=2.1.0
+numpy>=1.26.0,<2.0.0         # <2.0 for broad compatibility
+pydantic>=2.5.0
+networkx>=3.2.0
+
+# ── HuggingFace / NLP stack (replaces spaCy + taxonerd) ─────────────────────
+# PyTorch itself is installed via conda or the cu121 wheel index (see above).
+transformers>=4.40.0
+tokenizers>=0.19.0
+datasets>=2.18.0
+accelerate>=0.28.0            # device_map="auto", multi-GPU support
+huggingface-hub>=0.22.0
+sentencepiece>=0.2.0          # required by BERT/BioBERT tokenisers
+safetensors>=0.4.2            # fast, safe weight loading
+einops>=0.7.0                 # architecture utility used by some BERT variants
+
+# ── Geocoding ─────────────────────────────────────────────────────────────────
+geopy>=2.4.1
+
+# ── LLM API clients ───────────────────────────────────────────────────────────
+anthropic>=0.25.0
+openai>=1.20.0
+ollama>=0.2.0
+google-generativeai>=0.5.0
+
+# ── PDF parsing ───────────────────────────────────────────────────────────────
+pymupdf>=1.24.0
+pymupdf4llm>=0.0.17
+markitdown>=0.0.1
+docling>=1.20.0               # optional — IBM structured parser
+pytesseract>=0.3.10           # OCR fallback
+
+# ── HTTP / async ─────────────────────────────────────────────────────────────
+httpx>=0.27.0                 # biotrace_col_client async COL API calls
+
+# ── Visualisation ─────────────────────────────────────────────────────────────
+plotly>=5.20.0
+scipy>=1.12.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+pipdeptree>=2.13.0            # used by biotrace_v5_deps.py --audit
+
+# ── NOT INCLUDED (intentionally) ──────────────────────────────────────────────
+# spacy          — CUDA 13 incompatible (compiled extensions)
+# taxonerd       — depends on spacy; same CUDA 13 issue
+# en_ner_eco_biobert  — spacy model package; replaced by transformers pipeline
+# doctr          — optional OCR; install separately if needed:
+#                  pip install python-doctr[torch]

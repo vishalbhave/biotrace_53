@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  BioTrace v5.4 — Conda Environment
+#  Tested on CUDA 13.x drivers (PyTorch installed with cu121 wheels;
+#  CUDA 13 drivers are backward-compatible with CUDA 12.x runtime).
+#
+#  Create:   conda env create -f environment.yml
+#  Activate: conda activate biotrace_v5
+#  Update:   conda env update -f environment.yml --prune
+#
+#  spaCy and taxonerd are intentionally EXCLUDED — they fail on CUDA 13
+#  due to compiled CUDA extensions. NER is handled by biotrace_hf_ner.py
+#  using transformers + torch directly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: biotrace_v5
+
+channels:
+  - pytorch          # official PyTorch channel (CUDA wheels)
+  - nvidia           # CUDA toolkit libraries
+  - conda-forge      # broad scientific stack
+  - defaults
+
+dependencies:
+  # ── Python runtime ────────────────────────────────────────────────────────
+  - python=3.11
+  - pip>=24.0
+
+  # ── PyTorch (CUDA 12.1 wheels — compatible with CUDA 13.x drivers) ───────
+  # Do NOT install spacy or taxonerd — they pull CUDA extensions that
+  # conflict with CUDA 13. transformers + torch is the full replacement.
+  - pytorch>=2.2.0
+  - torchvision>=0.17.0
+  - torchaudio>=2.2.0
+  - pytorch-cuda=12.1      # links against CUDA 12.1 runtime (driver ≥ 525)
+
+  # ── Core scientific stack (conda-managed for binary compatibility) ─────────
+  - numpy>=1.26,<2.0       # pin below 2.0 — many packages not yet compat
+  - scipy>=1.12
+  - pandas>=2.1
+  - networkx>=3.2           # knowledge graph utilities
+
+  # ── pip-only packages ──────────────────────────────────────────────────────
+  - pip:
+    # ── Web / app framework ───────────────────────────────────────────────
+    - streamlit>=1.35.0
+    - requests>=2.31
+    - urllib3>=2.0
+
+    # ── Data validation ───────────────────────────────────────────────────
+    - pydantic>=2.5.0
+
+    # ── HuggingFace / NLP (replaces spacy + taxonerd entirely) ───────────
+    - transformers>=4.40.0
+    - tokenizers>=0.19.0
+    - datasets>=2.18.0
+    - accelerate>=0.28.0      # enables multi-GPU + device_map="auto"
+    - huggingface-hub>=0.22.0
+    - sentencepiece>=0.2.0    # required by several BERT tokenisers
+    - safetensors>=0.4.2      # fast model loading (replaces pickle weights)
+    - einops>=0.7.0           # used by some transformer architectures
+
+    # ── Geocoding ─────────────────────────────────────────────────────────
+    - geopy>=2.4.1
+
+    # ── LLM clients ───────────────────────────────────────────────────────
+    - anthropic>=0.25.0
+    - openai>=1.20.0
+    - ollama>=0.2.0
+    - google-generativeai>=0.5.0
+
+    # ── PDF parsing (in priority order) ───────────────────────────────────
+    - pymupdf4llm>=0.0.17
+    - pymupdf>=1.24.0         # pymupdf4llm dependency
+    - markitdown>=0.0.1       # Microsoft lightweight parser
+    - docling>=1.20.0         # IBM structured PDF parser (optional)
+    - pytesseract>=0.3.10     # OCR fallback
+
+    # ── Visualisation ─────────────────────────────────────────────────────
+    - plotly>=5.20.0
+
+    # ── Taxonomy APIs ─────────────────────────────────────────────────────
+    - httpx>=0.27.0           # async HTTP for COL client (biotrace_col_client)
+
+    # ── Utilities ─────────────────────────────────────────────────────────
+    - tqdm>=4.66
+    - python-dotenv>=1.0
+
+    # ── Dev / audit only (not needed at runtime) ──────────────────────────
+    - pipdeptree>=2.13        # used by biotrace_v5_deps.py --audit
