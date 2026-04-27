@@ -179,7 +179,7 @@ _DOCLING_AVAILABLE = False
 try:
     from docling.document_converter import DocumentConverter as _DoclingConverter
     _DOCLING_AVAILABLE = True
-except ImportError:
+except Exception:
     pass
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
