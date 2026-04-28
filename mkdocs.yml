@@ -1,7 +1,7 @@
 site_name: BioTrace Documentation
 site_description: Documentation for the BioTrace architecture and data pipelines
-repo_url: https://github.com/my-org/biotrace
-edit_uri: edit/main/docs/
+repo_url: https://github.com/vishalbhave/biotrace_53/
+edit_uri: ./main/docs/
 
 theme:
   name: material
