@@ -34,9 +34,6 @@ import pandas as pd
 import streamlit as st
 import requests
 import urllib.parse
-import asyncio
-
-from biotrace_agents import run_multi_agent_pipeline
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LOGGING
@@ -110,18 +107,15 @@ _VERIFIER_AVAILABLE = False
 detect_scientific_names = None
 verify_occurrences_with_fallback = None
 try:
-    from biotrace_unified_verifier import BioTraceUnifiedVerifier
-
-    def verify_occurrences_with_fallback(*args, **kwargs):
-        pass
-
-    def detect_scientific_names(*args, **kwargs):
-        pass
+    from biotrace_taxonomy import (
+        detect_scientific_names,
+        verify_occurrences_with_fallback,
+    )
 
     _VERIFIER_AVAILABLE = True
-    logger.info("[v5] biotrace_unified_verifier loaded")
+    logger.info("[v5] biotrace_taxonomy loaded (shared detection + verification)")
 except ImportError:
-    logger.warning("[v5] biotrace_unified_verifier.py not found")
+    logger.warning("[v5] biotrace_taxonomy.py not found")
 
 _GEOCODER_AVAILABLE = False
 GeocodingCascade = None
@@ -154,11 +148,11 @@ except ImportError:
 _WIKI_AVAILABLE = False
 BioTraceWiki = None
 try:
-    from Unified_Wiki_Module import UnifiedWiki as BioTraceWiki
+    from biotrace_wiki import BioTraceWiki
     _WIKI_AVAILABLE = True
-    logger.info("[v5] Unified Wiki loaded")
+    logger.info("[v5] Wiki loaded")
 except ImportError:
-    logger.warning("[v5] Unified_Wiki_Module.py not found")
+    logger.warning("[v5] biotrace_wiki.py not found")
 
 # ── PDF parsers ───────────────────────────────────────────────────────────────
 _PYMUPDF_AVAILABLE = False
@@ -179,7 +173,7 @@ _DOCLING_AVAILABLE = False
 try:
     from docling.document_converter import DocumentConverter as _DoclingConverter
     _DOCLING_AVAILABLE = True
-except Exception:
+except ImportError:
     pass
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -496,41 +490,12 @@ def init_db():
             validationStatus TEXT DEFAULT 'pending',
             notes TEXT,
             created_at TEXT DEFAULT (datetime('now')),
-            session_id TEXT,
-            geometry_geojson TEXT
+            session_id TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_v4_hash   ON occurrences_v4(file_hash);
         CREATE INDEX IF NOT EXISTS idx_v4_sp     ON occurrences_v4(validName);
         CREATE INDEX IF NOT EXISTS idx_v4_loc    ON occurrences_v4(verbatimLocality);
         CREATE INDEX IF NOT EXISTS idx_v4_family ON occurrences_v4(family_);
-
-        -- Cache for gnparser/gnfinder taxonomy verification
-        CREATE TABLE IF NOT EXISTS taxonomic_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            verbatim_name TEXT UNIQUE,
-            valid_name TEXT,
-            phylum TEXT,
-            class_ TEXT,
-            order_ TEXT,
-            family_ TEXT,
-            authorship TEXT,
-            year TEXT,
-            data_source TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_tax_cache_name ON taxonomic_cache(verbatim_name);
-
-        -- Cache for Overpass API geospatial results
-        CREATE TABLE IF NOT EXISTS locality_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            locality_string TEXT UNIQUE,
-            decimalLatitude REAL,
-            decimalLongitude REAL,
-            geometry_geojson TEXT,
-            source TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_loc_cache_str ON locality_cache(locality_string);
     """)
     con.commit()
     con.close()
@@ -630,8 +595,8 @@ def insert_occurrences(occurrences, file_hash, source_title, session_id):
                 decimalLatitude, decimalLongitude, verbatimLocality,
                 occurrenceType, geocodingSource, phylum, class_, order_,
                 family_, wormsID, itisID, taxonRank, nameAccordingTo,
-                taxonomicStatus, matchScore, session_id, geometry_geojson
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                taxonomicStatus, matchScore, session_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             file_hash,
             str(occ.get("recordedName") or occ.get("Recorded Name",""))[:300],
@@ -654,7 +619,6 @@ def insert_occurrences(occurrences, file_hash, source_title, session_id):
             str(occ.get("taxonomicStatus",""))[:50],
             float(occ.get("matchScore", 0) or 0),
             session_id,
-            str(occ.get("geometry_geojson", ""))
         ))
         inserted += 1
         
@@ -2081,7 +2045,7 @@ with st.sidebar:
         use_mb   = st.toggle("Memory Bank",       value=_MB_AVAILABLE)
     with col2:
         use_wiki = st.toggle("LLM-Wiki",          value=_WIKI_AVAILABLE)
-        wiki_narr= st.toggle("Wiki Narratives",   value=False)
+        wiki_narr= st.toggle("Wiki Narratives",   value=True)
 
     st.divider()
 
@@ -2107,7 +2071,7 @@ with st.sidebar:
     _status(_PLOTLY_AVAILABLE,     "plotly",            "plotly")
 
     st.caption("**local modules** (place alongside biotrace_v5.py)")
-    _status(_VERIFIER_AVAILABLE,   "biotrace_unified_verifier.py", "biotrace_unified_verifier.py", is_local=True)
+    _status(_VERIFIER_AVAILABLE,   "biotrace_taxonomy.py",         "biotrace_taxonomy.py",         is_local=True)
     _status(_GEOCODER_AVAILABLE,   "geocoding_cascade.py",         "geocoding_cascade.py",         is_local=True)
     _status(_CHUNKER_AVAILABLE,    "biotrace_chunker.py",          "biotrace_chunker.py",          is_local=True)
     _status(_GNV_AVAILABLE,        "biotrace_gnv.py",              "biotrace_gnv.py",              is_local=True)
@@ -2473,44 +2437,41 @@ with tabs[0]:
                     geonames_db      = GEONAMES_DB,
                 )
 
-            log_cb("[Agent] Running new PydanticAI multi-agent pipeline...")
-            model_id = f"openai:{model_sel}" if provider == "OpenAI" else model_sel
-            enriched_occurrences = asyncio.run(run_multi_agent_pipeline(
-                md_text, model_id
-            ))
-            occurrences = []
-            for occ in enriched_occurrences:
-                mapped = {
-                    "recordedName": occ.raw.recorded_name,
-                    "validName": occ.taxonomy.valid_name,
-                    "phylum": occ.taxonomy.phylum,
-                    "class_": occ.taxonomy.class_,
-                    "order_": occ.taxonomy.order_,
-                    "family_": occ.taxonomy.family_,
-                    "sourceCitation": occ.raw.source_citation,
-                    "habitat": occ.raw.habitat,
-                    "samplingEvent": occ.raw.sampling_event.model_dump(),
-                    "rawTextEvidence": occ.raw.raw_text_evidence,
-                    "verbatimLocality": occ.raw.verbatim_locality,
-                    "occurrenceType": occ.raw.occurrence_type,
-                    "decimalLatitude": occ.geospatial.decimalLatitude,
-                    "decimalLongitude": occ.geospatial.decimalLongitude,
-                    "geometry_geojson": occ.geospatial.geometry_geojson,
-                    "geocodingSource": occ.geospatial.geocodingSource,
-                    "taxonomicStatus": occ.taxonomy.taxonomic_status,
-                }
-                occurrences.append(mapped)
-            log_cb(f"[Agent Pipeline] Extracted, Enriched, and Reviewed {len(occurrences)} records")
-            if hasattr(log_inst, "log_extraction_result"):
+            try:
+                from biotrace_agent_loop import agent_extract_with_correction
+                _llm_partial = lambda p: call_llm(p, provider, model_sel, api_key, ollama_url)
+                occurrences = agent_extract_with_correction(
+                    full_text  = md_text,
+                    extract_fn = _run_standard_extraction,
+                    llm_fn     = _llm_partial,
+                    log_cb     = log_cb,
+                    max_retries = 2,
+                )
+            except ImportError:
+                log_cb("[Agent] biotrace_agent_loop.py not found — standard extraction", "warn")
+                occurrences = _run_standard_extraction(md_text)
+            
+            if hasattr(log_inst, 'log_extraction_result'):
                 log_inst.log_extraction_result("document", occurrences)
+                
             with progress_placeholder.container():
                 render_species_progress_panel(log_inst.tracker)
+
             log_cb(f"[Extract] Raw records: {len(occurrences)}")
+
             if not occurrences:
                 st.warning("No occurrences extracted. Check LLM provider settings.")
                 st.stop()
+
+            # ── Step 4: Taxonomy enrichment ───────────────────────────────────
+            wiki_inst   = get_wiki() if use_wiki else None
+            occurrences = enrich_taxonomy(occurrences, log_cb, wiki=wiki_inst)
+
+            # ── Step 5: Locality splitting ────────────────────────────────────
             if do_split_loc:
                 occurrences = split_localities(occurrences, log_cb)
+
+            # ── Step 6: Primary filter ────────────────────────────────────────
             if primary_only:
                 before = len(occurrences)
                 occurrences = [
@@ -2519,36 +2480,60 @@ with tabs[0]:
                        str(o.get("occurrenceType","")).lower() == "primary"
                 ]
                 log_cb(f"[Filter] Primary only: {len(occurrences)}/{before}")
+
+            
+            # PATCHED-R2: R1b-hitl-checkpoint — save checkpoint before gate fires
             if st.session_state.get("use_hitl_approval", True):
                 try:
-                    from biotrace_gbif_verifier import render_approval_table
+                    from biotrace_gbif_verifier import gbif_verify_batch, render_approval_table
+                    log_cb("[GBIF] Verifying species against GBIF Backbone Taxonomy…")
+                    occurrences = gbif_verify_batch(occurrences, min_confidence=80)
+                    n_auto = sum(1 for o in occurrences if o.get("gbifApproved"))
+                    log_cb(f"[GBIF] {n_auto}/{len(occurrences)} auto-approved")
+
+                    # Save checkpoint so HITL confirm can resume without re-running pipeline
                     st.session_state["_hitl_pending_occurrences"] = occurrences
                     st.session_state["_hitl_pending_hash"]        = file_hash
                     st.session_state["_hitl_pending_session"]     = session_id
                     st.session_state["_hitl_pending_citation"]    = citation_str
                     st.session_state["_hitl_pending_title"]       = doc_title
+
                     approved = render_approval_table(occurrences)
                     if approved is None:
-                        st.stop()
+                        st.stop()   # wait for biologist to confirm
+                    # Confirmed — clear checkpoint and continue
                     del st.session_state["_hitl_pending_occurrences"]
                     occurrences = approved
                     log_cb(f"[HITL] {len(occurrences)} species approved for DB/KG/Memory")
                 except ImportError:
-                    log_cb("[GBIF] biotrace_gbif_verifier.py not found — skipping HITL gate", "warn")
+                    log_cb("[GBIF] biotrace_gbif_verifier.py not found — skipping HITL gate",
+                           "warn")
+
+            # [ENHANCEMENT: biotrace_col_client] — Stage 5: COL taxonomy enrichment
+            # Queries Catalogue of Life API; results cached in col_taxonomy_cache.
+            # Runs after Step 4 so validName is already populated.
+            from biotrace_col_client import enrich_records_with_col
+            occurrences = enrich_records_with_col(occurrences, META_DB_PATH)
+            log_cb(f"[COL] Enrichment complete ({len(occurrences)} records)")
+
+            # [ENHANCEMENT: biotrace_relation_extractor] — Stage 3 (DeepKE-inspired)
+            # Second LLM pass: cross-sentence relation triples per document.
+            # FOUND_AT | CO_OCCURS_WITH | INHABITS | FEEDS_ON | PARASITE_OF
+            # Stored in species_relations SQLite table; passed to SpatioKG below.
             from biotrace_relation_extractor import extract_relations
             species_in_batch = list({
                 r.get("validName") or r.get("recordedName", "")
                 for r in occurrences
                 if r.get("validName") or r.get("recordedName")
             })
-            relation_triples = []
+            relation_triples = []  # always defined; KG block below never NameErrors
             if species_in_batch:
                 relation_triples = extract_relations(
-                    text=md_text,
+                    text=md_text,                           # full parsed markdown
                     known_species=species_in_batch,
-                    source_citation=citation_str,
+                    source_citation=citation_str,           # fixed: was cite_str (inner scope)
                     file_hash=file_hash,
-                    llm_call_fn=lambda p: call_llm(
+                    llm_call_fn=lambda p: call_llm(         # fixed: was _call_claude (undefined)
                         p, provider, model_sel, api_key, ollama_url
                     ),
                     meta_db_path=META_DB_PATH,
@@ -3083,9 +3068,9 @@ with tabs[6]:
     else:
         idx_stats = wiki.index_stats()
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total Articles", idx_stats.get("total_articles", 0))
-        col2.metric("Species Articles", len(idx_stats.get("sections", {}).get("species", [])))
-        col3.metric("Locality Articles", len(idx_stats.get("sections", {}).get("locality", [])))
+        col1.metric("Total Articles", idx_stats["total_articles"])
+        col2.metric("Species Articles", idx_stats["by_section"].get("species",0))
+        col3.metric("Locality Articles", idx_stats["by_section"].get("locality",0))
 
         st.divider()
 
@@ -3138,7 +3123,7 @@ with tabs[6]:
             if selected_sp:
                 art = wiki.get_species_article(selected_sp) or {}
                 facts = art.get("facts", {})
-
+                print(facts)
                 # ── Taxonomy banner ──────────────────────────────────────────
                 _db_rows = _wiki_db_occurrences(selected_sp)
                 _phylum = facts.get("phylum","") or (_db_rows["phylum"].dropna().iloc[0] if not _db_rows.empty and "phylum" in _db_rows else "")

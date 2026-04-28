@@ -257,9 +257,6 @@ class UnifiedWiki:
     def list_species(self) -> list[str]:
         return sorted(self._read_json(fp).get("title", "") for fp in (self.root / "species").glob("*.json"))
 
-    def list_localities(self) -> list[str]:
-        return sorted(self._read_json(fp).get("title", "") for fp in (self.root / "locality").glob("*.json"))
-
     # ── Folium Maps ───────────────────────────────────────────────────────────
     def generate_global_map(self):
         if not _FOLIUM_AVAILABLE: return None

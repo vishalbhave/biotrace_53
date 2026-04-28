@@ -187,11 +187,6 @@ def dedup_occurrences(
 
     best: dict[str, dict] = {}   # key → best occurrence so far
 
-    def _normalize_locality(l):
-        # group records with overlapping strings like Ratnagiri, Maharashtra
-        parts = [p.strip().lower() for p in l.replace(',', ' ').replace(';', ' ').split()]
-        return " ".join(sorted(set(parts)))
-
     for occ in occurrences:
         if not isinstance(occ, dict):
             continue
@@ -204,11 +199,7 @@ def dedup_occurrences(
             continue
 
         loc  = str(occ.get("verbatimLocality") or "").strip()
-
-        # Merge overlapping locality logic
-        loc_normalized = _normalize_locality(loc)
-
-        key  = f"{_canon_name(name)}||{loc_normalized}"
+        key  = f"{_canon_name(name)}||{_canon_locality(loc)}"
 
         occ_type_raw = str(occ.get("occurrenceType") or "").lower().strip()
         priority     = _OCC_PRIORITY.get(occ_type_raw, 3)
