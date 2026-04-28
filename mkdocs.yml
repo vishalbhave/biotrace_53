@@ -1,0 +1,65 @@
+site_name: BioTrace Documentation
+site_description: Documentation for the BioTrace architecture and data pipelines
+repo_url: https://github.com/my-org/biotrace
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - toc.integrate
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mermaid2
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["."]
+          options:
+            show_root_heading: true
+            show_source: true
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Data Pipelines: pipelines.md
+  - API Reference:
+    - Main Loop: api/biotrace_v53.md
+    - Chunkers: api/chunkers.md
+    - Knowledge Graph: api/knowledge_graph.md
+    - NER & Extractors: api/ner_extractors.md
+    - API Integrations: api/api_integrations.md
+    - Agents & Verification: api/agents_verification.md
