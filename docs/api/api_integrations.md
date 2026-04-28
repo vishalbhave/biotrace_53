@@ -9,7 +9,7 @@ Modules that handle external verifications and integrations with biodiversity da
 ::: biotrace_gbif_verifier
 
 ## Species Verifier (GNA / WoRMS)
-::: species_verifier
+::: biotrace_taxonomy
 
 ## Catalogue of Life Client
 ::: biotrace_col_client
