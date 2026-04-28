@@ -6,7 +6,7 @@ Modules handling Human-In-The-Loop (HITL) tools and AI agent integrations for da
 ::: biotrace_hitl_geocoding
 
 ## HITL Staging Tab
-::: biotrace_hitl_staging_tab
+::: biotrace_v5_enhancements
 
 ## BioTrace Agents
 ::: biotrace_agents
