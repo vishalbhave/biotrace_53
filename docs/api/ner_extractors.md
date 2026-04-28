@@ -6,7 +6,7 @@ Modules responsible for Named Entity Recognition and specific entity extraction.
 ::: biotrace_hf_ner
 
 ## Taxonomy Extractor
-::: taxo_extractor
+::: biotrace_ner
 
 ## Locality NER
 ::: biotrace_locality_ner
