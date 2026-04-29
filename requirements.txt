@@ -74,3 +74,9 @@ pipdeptree>=2.13.0            # used by biotrace_v5_deps.py --audit
 # en_ner_eco_biobert  — spacy model package; replaced by transformers pipeline
 # doctr          — optional OCR; install separately if needed:
 #                  pip install python-doctr[torch]
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+mkdocs==1.6.1
+mkdocs-material==9.7.6
+mkdocs-mermaid2-plugin==1.2.3
+mkdocstrings[python]==1.0.4

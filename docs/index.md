@@ -18,4 +18,4 @@ To explore the documentation:
 
 - Check out the [**Architecture**](architecture.md) for a high-level view of the system components.
 - Dive into the [**Data Pipelines**](pipelines.md) to understand how data flows through BioTrace.
-- Review the [**API Reference**](api/biotrace_v53.md) for detailed documentation of individual modules generated directly from the source code.
+- Review the [**API Reference**](#) for detailed documentation of individual modules generated directly from the source code.
