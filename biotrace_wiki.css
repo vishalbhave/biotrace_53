@@ -1,0 +1,368 @@
+/*
+ * biotrace_wiki.css — BioTrace v5.5 Wiki Stylesheet
+ * Wikipedia-inspired layout · Marine-biology dark theme
+ * Loaded dynamically by biotrace_wiki_unified.py → render_unified_page()
+ */
+
+/* ── Root design tokens ───────────────────────────────────────────────── */
+:root {
+  --wiki-bg:          #0d1117;
+  --wiki-surface:     #161b22;
+  --wiki-border:      #30363d;
+  --wiki-accent:      #2E86AB;
+  --wiki-accent2:     #44BBA4;
+  --wiki-gold:        #d4a017;
+  --wiki-text:        #e6edf3;
+  --wiki-muted:       #8b949e;
+  --wiki-link:        #58a6ff;
+  --wiki-danger:      #f85149;
+  --wiki-warn:        #e3b341;
+  --wiki-success:     #3fb950;
+  --font-main:        'Georgia', 'Times New Roman', serif;
+  --font-ui:          'Segoe UI', 'Arial', sans-serif;
+  --font-mono:        'JetBrains Mono', 'Consolas', monospace;
+  --radius:           6px;
+  --shadow:           0 2px 8px rgba(0,0,0,0.45);
+}
+
+/* ── Page wrapper ─────────────────────────────────────────────────────── */
+.wiki-page {
+  font-family: var(--font-main);
+  color: var(--wiki-text);
+  background: var(--wiki-bg);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.2rem;
+  line-height: 1.7;
+}
+
+/* ── Page title ───────────────────────────────────────────────────────── */
+.wiki-title {
+  font-family: var(--font-ui);
+  font-size: 2rem;
+  font-weight: 700;
+  border-bottom: 2px solid var(--wiki-accent);
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.6rem;
+  color: var(--wiki-text);
+}
+
+.wiki-title i,
+.wiki-title em {
+  font-style: italic;
+  color: var(--wiki-accent2);
+}
+
+.wiki-subtitle {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  color: var(--wiki-muted);
+  margin-bottom: 1.2rem;
+}
+
+/* ── Lead section (floated taxobox + prose) ───────────────────────────── */
+.wiki-lead {
+  overflow: hidden;   /* clearfix for floated taxobox */
+  margin-bottom: 1.6rem;
+}
+
+.wiki-lead p {
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* ── Taxobox ──────────────────────────────────────────────────────────── */
+.wiki-taxobox {
+  float: right;
+  clear: right;
+  margin: 0 0 1.2rem 1.6rem;
+  min-width: 230px;
+  max-width: 300px;
+  background: var(--wiki-surface);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  overflow: hidden;
+}
+
+.wiki-taxobox-header {
+  background: linear-gradient(135deg, var(--wiki-accent), var(--wiki-accent2));
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 8px 12px;
+  letter-spacing: 0.04em;
+}
+
+.wiki-taxobox-species-name {
+  font-style: italic;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 6px 12px 4px;
+  color: var(--wiki-muted);
+  border-bottom: 1px solid var(--wiki-border);
+}
+
+.wiki-taxobox table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.wiki-taxobox tr:nth-child(even) {
+  background: rgba(255,255,255,0.03);
+}
+
+.wiki-taxobox td {
+  padding: 4px 10px;
+  vertical-align: top;
+}
+
+.wiki-taxobox td:first-child {
+  color: var(--wiki-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  width: 45%;
+}
+
+.wiki-taxobox td:last-child {
+  color: var(--wiki-text);
+  font-style: italic;
+}
+
+.wiki-taxobox td:last-child.no-italic {
+  font-style: normal;
+}
+
+.wiki-taxobox-footer {
+  padding: 6px 10px;
+  border-top: 1px solid var(--wiki-border);
+  text-align: center;
+}
+
+.wiki-taxobox-footer a {
+  color: var(--wiki-link);
+  text-decoration: none;
+  font-size: 0.78rem;
+}
+
+.wiki-taxobox-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ── Status badges (verification / IUCN) ─────────────────────────────── */
+.wiki-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0.5rem 0 1rem;
+  font-family: var(--font-ui);
+}
+
+.wiki-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.wiki-badge-unverified  { background: #3d2200; color: var(--wiki-warn);    border: 1px solid var(--wiki-warn); }
+.wiki-badge-verified    { background: #0a2d1a; color: var(--wiki-success); border: 1px solid var(--wiki-success); }
+.wiki-badge-rejected    { background: #2d0a0a; color: var(--wiki-danger);  border: 1px solid var(--wiki-danger); }
+.wiki-badge-rank        { background: #162032; color: var(--wiki-link);    border: 1px solid var(--wiki-link); }
+.wiki-badge-iucn-lc     { background: #0a2d1a; color: #4caf50; border: 1px solid #4caf50; }
+.wiki-badge-iucn-nt     { background: #1a2500; color: #8bc34a; border: 1px solid #8bc34a; }
+.wiki-badge-iucn-vu     { background: #2d2200; color: #ffc107; border: 1px solid #ffc107; }
+.wiki-badge-iucn-en     { background: #2d1500; color: #ff9800; border: 1px solid #ff9800; }
+.wiki-badge-iucn-cr     { background: #2d0a0a; color: #f44336; border: 1px solid #f44336; }
+.wiki-badge-iucn-dd     { background: #1a1a1a; color: #9e9e9e; border: 1px solid #9e9e9e; }
+
+/* ── Section headings ─────────────────────────────────────────────────── */
+.wiki-section-h2 {
+  font-family: var(--font-ui);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--wiki-text);
+  border-bottom: 1px solid var(--wiki-border);
+  padding-bottom: 4px;
+  margin: 1.6rem 0 0.8rem;
+}
+
+.wiki-section-h3 {
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--wiki-accent2);
+  margin: 1.2rem 0 0.5rem;
+}
+
+/* ── Fact pill (inline key=value) ─────────────────────────────────────── */
+.wiki-fact-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0.4rem 0;
+}
+
+.wiki-pill {
+  background: var(--wiki-surface);
+  border: 1px solid var(--wiki-border);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--wiki-text);
+}
+
+.wiki-pill span {
+  color: var(--wiki-muted);
+  margin-right: 4px;
+}
+
+/* ── Source-conflict callout ──────────────────────────────────────────── */
+.wiki-conflict {
+  background: #2d2000;
+  border-left: 3px solid var(--wiki-warn);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 6px 12px;
+  margin: 6px 0;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: #f0d080;
+}
+
+.wiki-conflict::before { content: "⚠️ Conflict: "; font-weight: 700; }
+
+/* ── Citation / reference ─────────────────────────────────────────────── */
+.wiki-ref {
+  vertical-align: super;
+  font-size: 0.7rem;
+  color: var(--wiki-link);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.wiki-references {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--wiki-muted);
+  margin-top: 1rem;
+  border-top: 1px solid var(--wiki-border);
+  padding-top: 0.8rem;
+}
+
+.wiki-references li {
+  margin-bottom: 4px;
+}
+
+/* ── Occurrence table ─────────────────────────────────────────────────── */
+.wiki-occ-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  margin: 0.8rem 0;
+}
+
+.wiki-occ-table th {
+  background: var(--wiki-surface);
+  color: var(--wiki-muted);
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 2px solid var(--wiki-border);
+  font-weight: 600;
+}
+
+.wiki-occ-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(48,54,61,0.6);
+  color: var(--wiki-text);
+}
+
+.wiki-occ-table tr:hover td {
+  background: rgba(46,134,171,0.06);
+}
+
+.occ-primary   { color: var(--wiki-success); font-weight: 600; }
+.occ-secondary { color: var(--wiki-link);    font-weight: 600; }
+.occ-uncertain { color: var(--wiki-warn);    font-weight: 600; }
+
+/* ── Version history chip ─────────────────────────────────────────────── */
+.wiki-version-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--wiki-surface);
+  border: 1px solid var(--wiki-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  color: var(--wiki-muted);
+  margin-left: 8px;
+}
+
+/* ── Diagnostic feature list ──────────────────────────────────────────── */
+.wiki-diag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+
+.wiki-diag-list li {
+  padding: 3px 0 3px 18px;
+  position: relative;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+}
+
+.wiki-diag-list li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--wiki-accent2);
+  font-size: 0.8rem;
+  top: 5px;
+}
+
+/* ── Code / formula ───────────────────────────────────────────────────── */
+.wiki-formula {
+  font-family: var(--font-mono);
+  background: var(--wiki-surface);
+  border: 1px solid var(--wiki-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.85rem;
+  color: var(--wiki-accent2);
+}
+
+/* ── Enhancement log (collapsible) ───────────────────────────────────── */
+.wiki-enhance-log {
+  background: var(--wiki-surface);
+  border: 1px solid var(--wiki-border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--wiki-muted);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .wiki-taxobox {
+    float: none;
+    margin: 0 0 1rem;
+    max-width: 100%;
+  }
+  .wiki-title { font-size: 1.4rem; }
+}

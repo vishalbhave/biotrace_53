@@ -35,6 +35,8 @@ import streamlit as st
 import requests
 import urllib.parse
 
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  LOGGING
 # ─────────────────────────────────────────────────────────────────────────────
@@ -97,6 +99,20 @@ from biotrace_dedup_patch import dedup_occurrences
 from biotrace_dedup_patch import suppress_regional_duplicates
 from biotrace_progress_logger import BioTraceLogger, render_species_progress_panel
 
+from biotrace_v56_integration import install_v56_patches
+install_v56_patches(meta_db_path=META_DB_PATH,
+                    kg_db_path=KG_DB_PATH, 
+                    wiki_root=WIKI_ROOT)
+
+
+from biotrace_patch57_update import install_v57_patches
+install_v57_patches(
+    meta_db_path = META_DB_PATH,    # e.g. "biodiversity_data/metadata_v5.db"
+    wiki_root    = WIKI_ROOT,       # e.g. "biodiversity_data/wiki"
+    kg_db_path   = KG_DB_PATH,      # e.g. "biodiversity_data/knowledge_graph.db"
+    ollama_url   = "http://localhost:11434",
+    ollama_model = "gemma4",        # or whichever model you use
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  OPTIONAL IMPORTS — ALL GRACEFULLY DEGRADED
@@ -127,32 +143,74 @@ except ImportError:
     logger.warning("[v5] geocoding_cascade.py not found")
 
 # ── V5 new modules ────────────────────────────────────────────────────────────
+# _KG_AVAILABLE = False
+# BioTraceKnowledgeGraph = None
+# try:
+#     from biotrace_knowledge_graph import BioTraceKnowledgeGraph
+#     _KG_AVAILABLE = True
+#     logger.info("[v5] KnowledgeGraph loaded")
+# except ImportError:
+#     logger.warning("[v5] biotrace_knowledge_graph.py not found")
+
+# _MB_AVAILABLE = False
+# BioTraceMemoryBank = None
+# try:
+#     from biotrace_memory_bank import BioTraceMemoryBank
+#     _MB_AVAILABLE = True
+#     logger.info("[v5] MemoryBank loaded")
+# except ImportError:
+#     logger.warning("[v5] biotrace_memory_bank.py not found")
+
+# _WIKI_AVAILABLE = False
+# BioTraceWiki = None
+# try:
+#     from biotrace_wiki import BioTraceWiki
+#     _WIKI_AVAILABLE = True
+#     logger.info("[v5] Wiki loaded")
+# except ImportError:
+#     logger.warning("[v5] biotrace_wiki.py not found")
+#28042026
 _KG_AVAILABLE = False
 BioTraceKnowledgeGraph = None
+_KG_ERROR = ""
 try:
     from biotrace_knowledge_graph import BioTraceKnowledgeGraph
     _KG_AVAILABLE = True
     logger.info("[v5] KnowledgeGraph loaded")
-except ImportError:
-    logger.warning("[v5] biotrace_knowledge_graph.py not found")
-
+except Exception as _exc:
+    _KG_ERROR = str(_exc)
+    logger.warning("[v5] KnowledgeGraph import failed: %s", _exc)
+ 
 _MB_AVAILABLE = False
 BioTraceMemoryBank = None
+_MB_ERROR = ""
 try:
     from biotrace_memory_bank import BioTraceMemoryBank
     _MB_AVAILABLE = True
     logger.info("[v5] MemoryBank loaded")
-except ImportError:
-    logger.warning("[v5] biotrace_memory_bank.py not found")
-
+except Exception as _exc:
+    _MB_ERROR = str(_exc)
+    logger.warning("[v5] MemoryBank import failed: %s", _exc)
+ 
 _WIKI_AVAILABLE = False
-BioTraceWiki = None
+BioTraceWikiUnified = None
 try:
-    from biotrace_wiki import BioTraceWiki
+    # from biotrace_wiki_unified import BioTraceWikiUnified, inject_css_streamlit
+    from biotrace_wiki_v56 import BioTraceWikiV56 as BioTraceWikiUnified, inject_css_streamlit
     _WIKI_AVAILABLE = True
-    logger.info("[v5] Wiki loaded")
+    logger.info("[v5.5] BioTraceWikiUnified loaded (versioned, LLM-enhanced)")
 except ImportError:
-    logger.warning("[v5] biotrace_wiki.py not found")
+    logger.warning("[v5.5] biotrace_wiki_unified.py not found — Wiki tab disabled")
+
+# Optional: Ollama Wiki Architect Agent
+_WIKI_AGENT_AVAILABLE = False
+OllamaWikiAgent = None
+try:
+    from biotrace_wiki_agent import OllamaWikiAgent
+    _WIKI_AGENT_AVAILABLE = True
+    logger.info("[v5.5] OllamaWikiAgent loaded")
+except ImportError:
+    logger.info("[v5.5] biotrace_wiki_agent.py not found — agent panel disabled")
 
 # ── PDF parsers ───────────────────────────────────────────────────────────────
 _PYMUPDF_AVAILABLE = False
@@ -360,7 +418,19 @@ def get_biodiviz_pipeline() -> "BiodiVizPipeline | None":
         logger.error("[v5.4] BiodiViz Init Error: %s", exc)
         return None
 
+#290426
 
+# ── v5.5 pydantic-ai agentic extraction ───────────────────────────────────────
+_PAI_AVAILABLE = False
+try:
+    from pydantic_ai import Agent as _PAIAgent
+    from pydantic_ai.models.ollama import OllamaModel as _PAIOllamaModel
+    _PAI_AVAILABLE = True
+    logger.info("[v5.5] pydantic-ai loaded — agentic extraction available")
+except Exception:
+    logger.info("[v5.5] pydantic-ai not installed (pip install pydantic-ai) — optional")
+    
+    
 # ─────────────────────────────────────────────────────────────────────────────
 #  PROMPTS  (v5.2 — high-recall, GNA-aware)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1824,39 +1894,164 @@ def geocode_occurrences(occurrences: list[dict], log_cb) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 #  V5 ENHANCED PIPELINE — KG + Memory Bank + Wiki
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# @st.cache_resource
+# def get_knowledge_graph() -> "BioTraceKnowledgeGraph | None":
+#     if not _KG_AVAILABLE:
+#         return None
+#     try:
+#         return BioTraceKnowledgeGraph(KG_DB_PATH)
+#     except Exception as exc:
+#         logger.error("[v5] KG init: %s", exc)
+#         return None
+
+
+# @st.cache_resource
+# def get_memory_bank() -> "BioTraceMemoryBank | None":
+#     if not _MB_AVAILABLE:
+#         return None
+#     try:
+#         return BioTraceMemoryBank(MB_DB_PATH)
+#     except Exception as exc:
+#         logger.error("[v5] MemoryBank init: %s", exc)
+#         return None
+
+
+from typing import NamedTuple
+ 
+class _ModuleResult(NamedTuple):
+    """Thin wrapper so tabs can show real errors, not generic 'Install' messages."""
+    instance: object        # None if unavailable
+    error:    str = ""      # human-readable error string
+ 
+    def __bool__(self):
+        return self.instance is not None
+ 
+    def __getattr__(self, name):
+        # Proxy attribute access to the wrapped instance so callers like
+        # `kg.stats()` still work without unwrapping.
+        if self.instance is not None:
+            return getattr(self.instance, name)
+        raise AttributeError(f"Module unavailable ({self.error}): .{name}")
+ 
+ 
 @st.cache_resource
-def get_knowledge_graph() -> "BioTraceKnowledgeGraph | None":
+def get_knowledge_graph() -> _ModuleResult:
     if not _KG_AVAILABLE:
-        return None
+        return _ModuleResult(None, _KG_ERROR or "biotrace_knowledge_graph.py not importable")
     try:
-        return BioTraceKnowledgeGraph(KG_DB_PATH)
+        return _ModuleResult(BioTraceKnowledgeGraph(KG_DB_PATH))
     except Exception as exc:
         logger.error("[v5] KG init: %s", exc)
-        return None
-
-
+        return _ModuleResult(None, str(exc))
+ 
+ 
 @st.cache_resource
-def get_memory_bank() -> "BioTraceMemoryBank | None":
+def get_memory_bank() -> _ModuleResult:
     if not _MB_AVAILABLE:
-        return None
+        return _ModuleResult(None, _MB_ERROR or "biotrace_memory_bank.py not importable")
     try:
-        return BioTraceMemoryBank(MB_DB_PATH)
+        return _ModuleResult(BioTraceMemoryBank(MB_DB_PATH))
     except Exception as exc:
         logger.error("[v5] MemoryBank init: %s", exc)
-        return None
+        return _ModuleResult(None, str(exc))
+ 
 
 
+# @st.cache_resource
+# def get_wiki() -> "BioTraceWiki | None":
+#     if not _WIKI_AVAILABLE:
+#         return None
+#     try:
+#         return BioTraceWiki(WIKI_ROOT)
+#     except Exception as exc:
+#         logger.error("[v5] Wiki init: %s", exc)
+#         return None
+
+#290426
 @st.cache_resource
-def get_wiki() -> "BioTraceWiki | None":
+def get_wiki() -> "BioTraceWikiUnified | None":
+    """Returns the singleton BioTraceWikiUnified instance (versioned SQLite store)."""
     if not _WIKI_AVAILABLE:
         return None
     try:
-        return BioTraceWiki(WIKI_ROOT)
+        css_path = os.path.join(os.path.dirname(__file__), "biotrace_wiki.css")
+        return BioTraceWikiUnified(
+            root_dir = WIKI_ROOT,
+            css_path = css_path if os.path.exists(css_path) else None,
+        )
     except Exception as exc:
-        logger.error("[v5] Wiki init: %s", exc)
+        logger.error("[v5.5] Wiki init: %s", exc)
         return None
 
 
+@st.cache_resource
+def get_wiki_agent() -> "OllamaWikiAgent | None":
+    """Returns an OllamaWikiAgent bound to the shared wiki store."""
+    if not _WIKI_AGENT_AVAILABLE:
+        return None
+    wiki = get_wiki()
+    if not wiki:
+        return None
+    # model / URL come from sidebar — read from session_state with defaults
+    model    = st.session_state.get("ollama_model_sel", "gemma4")
+    base_url = st.session_state.get("ollama_url",       "http://localhost:11434")
+    try:
+        return OllamaWikiAgent(wiki=wiki, model=model, base_url=base_url)
+    except Exception as exc:
+        logger.error("[v5.5] WikiAgent init: %s", exc)
+        return None
+
+
+# def ingest_into_v5_systems(
+#     occurrences: list[dict],
+#     citation: str,
+#     session_id: str,
+#     log_cb,
+#     provider: str = "",
+#     model_sel: str = "",
+#     api_key: str  = "",
+#     ollama_base_url: str = "http://localhost:11434",
+#     update_wiki_narratives: bool = False,
+#     use_kg: bool = True,   # FIX 2: respect sidebar toggles
+#     use_mb: bool = True,
+#     use_wiki: bool = True,
+# ):
+# """Push verified/geocoded occurrences into KG + Memory Bank + Wiki."""
+#     llm_fn = None
+#     if update_wiki_narratives:
+#         def llm_fn(prompt: str) -> str:
+#             return call_llm(prompt, provider, model_sel, api_key, ollama_base_url)
+
+#     # Knowledge Graph
+#     kg = get_knowledge_graph() if use_kg else None  # FIX 2: respect toggle
+#     if kg:
+#         try:
+#             added = kg.ingest_occurrences(occurrences)
+#             log_cb(f"[KG] +{added} nodes. Total: {kg.stats()['total_nodes']}")
+#         except Exception as exc:
+#             log_cb(f"[KG] Ingest error: {exc}", "warn")
+
+#     # Memory Bank
+#     mb = get_memory_bank() if use_mb else None  # FIX 2: respect toggle
+#     if mb:
+#         try:
+#             r = mb.store_occurrences(
+#                 occurrences, session_id=session_id,
+#                 session_title=citation, source_file=session_id,
+#             )
+#             log_cb(
+#                 f"[MemoryBank] inserted={r['inserted']} merged={r['merged']} "
+#                 f"conflicts={r['conflicts']}"
+#             )
+#         except Exception as exc:
+#             log_cb(f"[MemoryBank] Store error: {exc}", "warn")
+# NEW — add chunk_text: str = "" parameter:
+# """
+
+
+#29042026
 def ingest_into_v5_systems(
     occurrences: list[dict],
     citation: str,
@@ -1867,7 +2062,8 @@ def ingest_into_v5_systems(
     api_key: str  = "",
     ollama_base_url: str = "http://localhost:11434",
     update_wiki_narratives: bool = False,
-    use_kg: bool = True,   # FIX 2: respect sidebar toggles
+    chunk_text: str = "",       # v5.5 — passed to wiki for LLM section updates
+    use_kg: bool = True,
     use_mb: bool = True,
     use_wiki: bool = True,
 ):
@@ -1878,7 +2074,7 @@ def ingest_into_v5_systems(
             return call_llm(prompt, provider, model_sel, api_key, ollama_base_url)
 
     # Knowledge Graph
-    kg = get_knowledge_graph() if use_kg else None  # FIX 2: respect toggle
+    kg = get_knowledge_graph() if use_kg else None
     if kg:
         try:
             added = kg.ingest_occurrences(occurrences)
@@ -1887,7 +2083,7 @@ def ingest_into_v5_systems(
             log_cb(f"[KG] Ingest error: {exc}", "warn")
 
     # Memory Bank
-    mb = get_memory_bank() if use_mb else None  # FIX 2: respect toggle
+    mb = get_memory_bank() if use_mb else None
     if mb:
         try:
             r = mb.store_occurrences(
@@ -1901,18 +2097,96 @@ def ingest_into_v5_systems(
         except Exception as exc:
             log_cb(f"[MemoryBank] Store error: {exc}", "warn")
 
-    # Wiki
-    wiki = get_wiki() if use_wiki else None  # FIX 2: respect toggle
+    # Wiki — BioTraceWikiUnified (versioned, CSS-styled, LLM-enhanced)
+    # wiki = get_wiki() if use_wiki else None
+    # if wiki:
+    #     try:
+    #         counts = wiki.update_from_occurrences(
+    #             occurrences,
+    #             citation           = citation,
+    #             llm_fn             = llm_fn,
+    #             update_narratives  = update_wiki_narratives,
+    #             chunk_text         = chunk_text,
+    #         )
+    #         log_cb(f"[Wiki] Updated: {counts}")
+    #     except Exception as exc:
+    #         log_cb(f"[Wiki] Update error: {exc}", "warn")    
+    
+    
+    # Wiki (BioTraceWikiUnified — versioned, CSS-styled, LLM-enhanced)
+    wiki = get_wiki() if use_wiki else None
     if wiki:
         try:
             counts = wiki.update_from_occurrences(
-                occurrences, citation=citation,
-                llm_fn=llm_fn,
-                update_narratives=update_wiki_narratives,
+                occurrences,
+                citation           = citation,
+                llm_fn             = llm_fn,
+                update_narratives  = update_wiki_narratives,
+                chunk_text         = chunk_text,    # NEW: enables targeted section update
+            )
+            log_cb(f"[Wiki] Updated: {counts}")
+
+            # ── NEW: Auto-Run Wiki Architect Agent on Docling Chunks ──
+            # This uses the Docling sections (chunk_text) to automatically 
+            # run the agent loop for newly extracted species.
+            if update_wiki_narratives and chunk_text and _WIKI_AGENT_AVAILABLE:
+                agent = get_wiki_agent()
+                if agent:
+                    # Get unique species names from this batch
+                    unique_sps = list({
+                        (o.get("validName") or o.get("recordedName")) 
+                        for o in occurrences 
+                        if (o.get("validName") or o.get("recordedName"))
+                    })
+                    
+                    log_cb(f"[WikiAgent] Auto-running architect on {len(unique_sps)} species using Docling sections...")
+                    
+                    for sp in unique_sps:
+                        try:
+                            # Invoke the primary agent extraction method
+                            # (Adjust 'enhance_article' to match your agent's actual entry point if different)
+                            if hasattr(agent, "enhance_article"):
+                                agent.enhance_article(sp, chunk_text)
+                            elif hasattr(agent, "run_agent_pipeline"):
+                                agent.run_agent_pipeline(sp, chunk_text)
+                        except Exception as e_agent:
+                            log_cb(f"[WikiAgent] Error processing {sp}: {e_agent}", "warn")
+            # ──────────────────────────────────────────────────────────
+
+        except Exception as exc:
+            log_cb(f"[Wiki] Update error: {exc}", "warn")
+
+    # Wiki
+    # wiki = get_wiki() if use_wiki else None  # FIX 2: respect toggle
+    # if wiki:
+    #     try:
+    #         counts = wiki.update_from_occurrences(
+    #             occurrences, citation=citation,
+    #             llm_fn=llm_fn,
+    #             update_narratives=update_wiki_narratives,
+    #         )
+    #         log_cb(f"[Wiki] Updated: {counts}")
+    #     except Exception as exc:
+    #         log_cb(f"[Wiki] Update error: {exc}", "warn")
+    
+    #29042026
+    # Wiki (BioTraceWikiUnified — versioned, CSS-styled, LLM-enhanced)
+    wiki = get_wiki() if use_wiki else None
+    if wiki:
+        try:
+            counts = wiki.update_from_occurrences(
+                occurrences,
+                citation           = citation,
+                llm_fn             = llm_fn,
+                update_narratives  = update_wiki_narratives,
+                chunk_text         = chunk_text,    # NEW: enables targeted section update
             )
             log_cb(f"[Wiki] Updated: {counts}")
         except Exception as exc:
             log_cb(f"[Wiki] Update error: {exc}", "warn")
+            
+            
+    
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1938,6 +2212,12 @@ st.set_page_config(
     layout="wide",
 )
 
+# v5.5: Inject wiki CSS once at startup so it's available in any tab that
+# renders wiki HTML via st.components.v1.html().
+try:
+    inject_css_streamlit()
+except Exception:
+    pass
 
 # ── Custom CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -1956,6 +2236,8 @@ st.markdown("""
   }
 </style>
 """, unsafe_allow_html=True)
+
+
 
 
 # ── Title ─────────────────────────────────────────────────────────────────────
@@ -2217,11 +2499,15 @@ with tabs[0]:
     with st.expander("🧩 Chunking & Extraction Options", expanded=False):
         col_h1, col_h2 = st.columns(2)
         with col_h1:
-            use_hierarchical = st.checkbox(
-                "Hierarchical late-chunking (v5.3 — recommended)",
-                value=_HIER_CHUNKER_AVAILABLE,
-                help="3-level (section→paragraph→sentence) solves species/locality separation",
-            )
+            # use_hierarchical = st.checkbox(
+            #     "Hierarchical late-chunking (v5.3 — recommended)",
+            #     value=_HIER_CHUNKER_AVAILABLE,
+            #     help="3-level (section→paragraph→sentence) solves species/locality separation",
+            # )
+            # v5.5: Hierarchical chunking is always-on internally (Priority-2 fallback).
+            # The user checkbox has been removed to simplify the UI.
+            use_hierarchical = _HIER_CHUNKER_AVAILABLE   # always True when module present
+        
             use_scientific = st.checkbox(
                 "Scientific paper chunker (v5.4)",
                 value=_SCICHUNKER_AVAILABLE,
@@ -2317,7 +2603,7 @@ with tabs[0]:
         st.dataframe(_df[[c for c in
             ["recordedName","validName","family_","phylum","verbatimLocality",
              "occurrenceType","wormsID"] if c in _df.columns]],
-            use_container_width=True, height=350)
+            width=True, height=350)
         st.stop()  # done — prevent fall-through to run_btn pipeline
 
     if run_btn and uploaded:
@@ -2640,7 +2926,7 @@ with tabs[0]:
                 "decimalLongitude","wormsID","matchScore",
             ]
             show_cols = [c for c in show_cols if c in df.columns]
-            st.dataframe(df[show_cols], use_container_width=True, height=350)
+            st.dataframe(df[show_cols], width=True, height=350)
 
 
             with st.expander("📋 Extraction Log"):
@@ -2824,7 +3110,7 @@ with tabs[3]:
                         "geocodingSource":  st.column_config.TextColumn("Source"),
                     },
                     disabled=["id","recordedName"],
-                    use_container_width=True,
+                    width=True,
                     key="combined_editor",
                     height=min(400, 60 + 35 * len(_filt_occs)),
                 )
@@ -2927,9 +3213,20 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("🕸️ Species Knowledge Graph (GraphRAG)")
 
+    # kg = get_knowledge_graph()
+    # if not kg:
+    #     st.warning("Install `biotrace_knowledge_graph.py` alongside this file.")
     kg = get_knowledge_graph()
     if not kg:
-        st.warning("Install `biotrace_knowledge_graph.py` alongside this file.")
+        st.error(f"⚠️ Knowledge Graph unavailable")
+        with st.expander("Show error details"):
+            st.code(kg.error, language="text")
+            st.markdown(
+                "**Common fixes:**\n"
+                "- `pip install networkx` (required by knowledge graph)\n"
+                "- `pip install pyvis` (optional, needed for graph viz)\n"
+                "- Confirm `biotrace_knowledge_graph.py` is in the same folder as this file"
+            )
     else:
         stats = kg.stats()
         col1, col2, col3, col4 = st.columns(4)
@@ -2958,7 +3255,10 @@ with tabs[4]:
                     out = kg.export_pyvis_html("kg_viz.html", max_nodes=150)
                     if out and os.path.exists(out):
                         html_content = Path(out).read_text(encoding="utf-8")
-                        st.components.v1.html(html_content, height=600, scrolling=True)
+                        st.components.v1.html(html_content, height=600, scrolling=True, )
+                        # st.components.v1.html(html, width=None, height=None, scrolling=False, *, tab_index=None)
+
+
                     else:
                         st.warning("PyVis HTML generation failed.")
 
@@ -2998,9 +3298,20 @@ with tabs[4]:
 with tabs[5]:
     st.subheader("🧠 Persistent Memory Bank")
 
+    # mb = get_memory_bank()
+    # if not mb:
+    #     st.warning("Install `biotrace_memory_bank.py` alongside this file.")
     mb = get_memory_bank()
+    
     if not mb:
-        st.warning("Install `biotrace_memory_bank.py` alongside this file.")
+        st.error(f"⚠️ Memory Bank unavailable")
+        with st.expander("Show error details"):
+            st.code(mb.error, language="text")
+            st.markdown(
+                "**Common fixes:**\n"
+                "- Confirm `biotrace_memory_bank.py` is in the same folder as this file\n"
+                "- Check for any missing dependency reported above"
+            )
     else:
         ms = mb.stats()
         col1, col2, col3, col4 = st.columns(4)
@@ -3015,7 +3326,7 @@ with tabs[5]:
                 ms["top_species_by_confirmation"],
                 columns=["Species","Confirmations"],
             )
-            st.dataframe(top_df, use_container_width=True, hide_index=True)
+            st.dataframe(top_df, width=True, hide_index=True)
 
         st.divider()
 
@@ -3038,7 +3349,7 @@ with tabs[5]:
                 st.dataframe(pd.DataFrame(atoms)[[
                     "valid_name","family_","phylum","locality",
                     "habitat","occurrence_type","confidence","times_confirmed","source_citation",
-                ]], use_container_width=True)
+                ]], width=True)
             else:
                 st.info("No matching records found.")
 
@@ -3053,224 +3364,44 @@ with tabs[5]:
                 file_name="memory_bank_export.csv",
                 mime="text/csv",
             )
-
+#29042026
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  TAB 7 — WIKI
+#  TAB 7 — UNIFIED WIKI  (v5.5)
 # ═══════════════════════════════════════════════════════════════════════════════
 with tabs[6]:
-    st.subheader("📖 LLM-Wiki — Living Knowledge Base")
-    st.caption("Karpathy LLM-Wiki vision · April 2026 · Persistent structured articles from papers")
+    # Inject wiki CSS once per session
+    inject_css_streamlit()
 
     wiki = get_wiki()
     if not wiki:
-        st.warning("Install `biotrace_wiki.py` alongside this file.")
+        st.warning(
+            "📖 Wiki unavailable — place **biotrace_wiki_unified.py** and "
+            "**biotrace_wiki.css** alongside this file and restart."
+        )
     else:
-        idx_stats = wiki.index_stats()
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Articles", idx_stats["total_articles"])
-        col2.metric("Species Articles", idx_stats["by_section"].get("species",0))
-        col3.metric("Locality Articles", idx_stats["by_section"].get("locality",0))
-
-        st.divider()
-
-        # PATCHED-R2: R4-wiki-improvements — per-species map, taxonomy display,
-        # author normalization, richer locality checklist
-        import re as _re
-
-        def _strip_author(name: str) -> str:
-            """Remove authority suffix for display: 'Elysia obtusa Baba, 1938' → 'Elysia obtusa'"""
-            if not name: return name
-            return _re.sub(
-                r"\s+[A-Z][A-Za-z\-'']+(?:\s+(?:and|&|et)\s+[A-Z][A-Za-z\-'']+)?[,.]?\s*\d{4}.*$",
-                "", name
-            ).strip()
-
-        def _wiki_db_occurrences(species_name: str) -> pd.DataFrame:
-            """Pull occurrence rows from DB for a given species (handles author variants)."""
-            try:
-                import sqlite3 as _sq
-                _c = _sq.connect(META_DB_PATH)
-                _base = _strip_author(species_name).lower()
-                _df = pd.read_sql_query(
-                    """SELECT validName, recordedName, verbatimLocality, habitat,
-                              occurrenceType, sourceCitation, phylum, class_, order_,
-                              family_, wormsID, decimalLatitude, decimalLongitude,
-                              matchScore, taxonomicStatus
-                       FROM occurrences_v4
-                       WHERE lower(validName) LIKE ? OR lower(recordedName) LIKE ?
-                       ORDER BY id DESC""",
-                    _c,
-                    params=(f"%{_base}%", f"%{_base}%"),
-                )
-                _c.close()
-                return _df
-            except Exception:
-                return pd.DataFrame()
-
-        sp_list = wiki.list_species()
-        if sp_list:
-            # Normalise display names (strip authors for the selector)
-            _sp_display = sorted({_strip_author(s) for s in sp_list if s})
-            selected_sp_display = st.selectbox("View Species Article:", _sp_display)
-
-            # Find the original key (may have author)
-            selected_sp = next(
-                (s for s in sp_list if _strip_author(s) == selected_sp_display),
-                selected_sp_display,
+        # ── Build the LLM callable (used by manual enhance + auto-narrate) ──
+        def _wiki_llm_fn(prompt: str) -> str:
+            return call_llm(
+                prompt, provider, model_sel, api_key, ollama_url
             )
 
-            if selected_sp:
-                art = wiki.get_species_article(selected_sp) or {}
-                facts = art.get("facts", {})
-                print(facts)
-                # ── Taxonomy banner ──────────────────────────────────────────
-                _db_rows = _wiki_db_occurrences(selected_sp)
-                _phylum = facts.get("phylum","") or (_db_rows["phylum"].dropna().iloc[0] if not _db_rows.empty and "phylum" in _db_rows else "")
-                _family = facts.get("family","") or (_db_rows["family_"].dropna().iloc[0] if not _db_rows.empty and "family_" in _db_rows else "")
-                _order  = facts.get("order","")  or (_db_rows["order_"].dropna().iloc[0]  if not _db_rows.empty and "order_"  in _db_rows else "")
-                _wid    = facts.get("wormsID","") or (_db_rows["wormsID"].dropna().iloc[0] if not _db_rows.empty and "wormsID" in _db_rows else "")
+        # ── Delegate all UI to BioTraceWikiUnified.render_streamlit_tab() ──
+        wiki.render_streamlit_tab(
+            provider      = provider,
+            model_sel     = model_sel,
+            api_key       = api_key,
+            ollama_url    = ollama_url,
+            meta_db       = META_DB_PATH,
+            call_llm_fn   = _wiki_llm_fn,
+        )
 
-                _tax_parts = [p for p in [
-                    f"Phylum: **{_phylum}**"  if _phylum else None,
-                    f"Order: **{_order}**"    if _order  else None,
-                    f"Family: **{_family}**"  if _family else None,
-                ] if p]
-                if _tax_parts:
-                    st.markdown("  ·  ".join(_tax_parts))
-                if _wid:
-                    st.markdown(
-                        f"[🔗 WoRMS AphiaID {_wid}](https://www.marinespecies.org/aphia.php?p=taxdetails&id={_wid})"
-                    )
-
-                # ── Wiki narrative ───────────────────────────────────────────
-                md = wiki.render_species_markdown(selected_sp)
-                # Replace blank taxonomy lines in rendered markdown
-                if "Family: |" in md or "Phylum: |" in md:
-                    md = md.replace(
-                        "Family: |", f"Family: {_family} |"
-                    ).replace(
-                        "Phylum: |", f"Phylum: {_phylum} |"
-                    ).replace(
-                        "Order: |",  f"Order: {_order} |"
-                    )
-                st.markdown(md)
-
-                # ── Occurrence table from DB ──────────────────────────────────
-                if not _db_rows.empty:
-                    with st.expander(f"📋 {len(_db_rows)} occurrence records from database"):
-                        _show_cols = [c for c in [
-                            "validName","verbatimLocality","habitat","occurrenceType",
-                            "sourceCitation","wormsID","matchScore","taxonomicStatus",
-                            "decimalLatitude","decimalLongitude",
-                        ] if c in _db_rows.columns]
-                        st.dataframe(_db_rows[_show_cols], use_container_width=True,
-                                     hide_index=True)
-
-                # ── Per-species occurrence MAP (live from DB, not static) ─────
-                _map_rows = _db_rows.dropna(subset=["decimalLatitude","decimalLongitude"])
-                if not _map_rows.empty:
-                    st.markdown("#### 🗺️ Occurrence Map")
-                    st.caption(
-                        f"{len(_map_rows)} geocoded records for "
-                        f"*{_strip_author(selected_sp)}*"
-                    )
-                    st.map(
-                        _map_rows.rename(columns={
-                            "decimalLatitude": "lat",
-                            "decimalLongitude": "lon",
-                        })[["lat","lon"]],
-                        zoom=5,
-                    )
-                else:
-                    st.caption("No geocoded records — run Geocoding in Tab 4.")
-
-                # ── Provenance ───────────────────────────────────────────────
-                sources = _db_rows["sourceCitation"].dropna().unique().tolist() if not _db_rows.empty else []
-                if sources:
-                    with st.expander("📚 Provenance"):
-                        for s in sources:
-                            st.markdown(f"- {s}")
-        else:
-            st.info("No wiki articles yet. Run an extraction to populate.")
-
-        st.divider()
-
-        with st.expander("📍 Locality Species Checklist"):
-            # ── Locality Checklist (improved: shows all species + all points) ────
-            st.subheader("📍 Locality Species Checklist")
-            st.caption("Species recorded at each locality, with all occurrence coordinates shown on the map.")
-            loc_list = wiki.list_localities()
-            if loc_list:
-                selected_loc = st.selectbox("Locality:", loc_list, key="wiki_loc_sel")
-                if selected_loc:
-                    # Load from DB (not just wiki JSON) for completeness
-                    try:
-                        import sqlite3 as _sq2
-                        _lc = _sq2.connect(META_DB_PATH)
-                        _loc_df = pd.read_sql_query(
-                            """SELECT DISTINCT validName, recordedName, habitat,
-                                    occurrenceType, sourceCitation,
-                                    family_, phylum, wormsID,
-                                    decimalLatitude, decimalLongitude
-                            FROM occurrences_v4
-                            WHERE verbatimLocality LIKE ?
-                                OR verbatimLocality LIKE ?
-                            ORDER BY family_, validName""",
-                            _lc,
-                            params=(f"%{selected_loc}%", f"%{selected_loc[:15]}%"),
-                        )
-                        _lc.close()
-                    except Exception:
-                        _loc_df = pd.DataFrame()
-
-                    if not _loc_df.empty:
-                        _sp_at_loc = _loc_df["validName"].dropna().unique().tolist()
-                        st.write(f"**{len(_sp_at_loc)} species recorded at {selected_loc}:**")
-
-                        # Two-column species list with family grouping
-                        _fam_groups: dict = {}
-                        for _, row in _loc_df.iterrows():
-                            fam = str(row.get("family_","") or "Unknown family")
-                            sp  = str(row.get("validName","") or row.get("recordedName",""))
-                            if sp:
-                                _fam_groups.setdefault(fam, [])
-                                if sp not in _fam_groups[fam]:
-                                    _fam_groups[fam].append(sp)
-
-                        col_a, col_b = st.columns(2)
-                        _fam_items = sorted(_fam_groups.items())
-                        half = len(_fam_items) // 2
-                        for col, items in [(col_a, _fam_items[:half]), (col_b, _fam_items[half:])]:
-                            with col:
-                                for fam, sps in items:
-                                    st.markdown(f"**{fam}**")
-                                    for sp in sps:
-                                        st.markdown(f"  • *{_strip_author(sp)}*")
-
-                        # Map: all geocoded points at this locality
-                        _loc_map = _loc_df.dropna(subset=["decimalLatitude","decimalLongitude"])
-                        if not _loc_map.empty:
-                            st.markdown("#### 🗺️ All occurrence points at this locality")
-                            st.map(
-                                _loc_map.rename(columns={
-                                    "decimalLatitude": "lat",
-                                    "decimalLongitude": "lon",
-                                })[["lat","lon"]],
-                                zoom=8,
-                            )
-                    else:
-                        # Fallback to wiki JSON
-                        _slug_fn = wiki._slug if hasattr(wiki,"_slug")else lambda x: x.lower().replace(" ","_")
-                        loc_art = wiki._load_article("locality", _slug_fn(selected_loc))
-                        if loc_art:
-                            f = loc_art.get("facts",{})
-                            sp_cl = f.get("species_checklist",[])
-                            st.write(f"**{len(sp_cl)} species (from wiki cache):**")
-                            for sp in sp_cl:
-                                st.write(f"• {sp}")
-                        else:
-                            st.info(f"No occurrence data found for '{selected_loc}'.")
+        # ── Optional: Ollama Wiki Architect Agent panel ──────────────────
+        agent = get_wiki_agent()
+        if agent and _WIKI_AGENT_AVAILABLE:
+            st.divider()
+            with st.expander("🤖 Ollama Wiki Architect Agent (optional / agentic)", expanded=False):
+                agent.render_agent_panel()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3372,7 +3503,7 @@ with tabs[8]:
             "decimalLatitude","decimalLongitude","sourceCitation",
         ]
         cols_show = [c for c in cols_show if c in df_all.columns]
-        st.dataframe(df_all[cols_show], use_container_width=True, height=450)
+        st.dataframe(df_all[cols_show], width=True, height=450)
 
         with_coords = df_all.dropna(subset=["decimalLatitude","decimalLongitude"])
         if not with_coords.empty:

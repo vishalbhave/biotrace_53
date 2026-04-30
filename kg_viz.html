@@ -1,0 +1,208 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        
+            <script src="lib/bindings/utils.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+        
+<center>
+<h1></h1>
+</center>
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        <center>
+          <h1></h1>
+        </center>
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 800px;
+                 background-color: #1a1a2e;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+             /* position absolute is important and the container has to be relative or absolute as well. */
+          div.popup {
+                 position:absolute;
+                 top:0px;
+                 left:0px;
+                 display:none;
+                 background-color:#f5f4ed;
+                 -moz-border-radius: 3px;
+                 -webkit-border-radius: 3px;
+                 border-radius: 3px;
+                 border: 1px solid #808074;
+                 box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.2);
+          }
+
+          /* hide the original tooltip */
+          .vis-tooltip {
+            display:none;
+          }
+             
+        </style>
+    </head>
+
+
+    <body>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#2E86AB", "font": {"color": "#e0e0e0"}, "id": "species::eudendrium_carneum", "label": "Eudendrium carneum", "shape": "dot", "size": 15, "title": "\u003cb\u003eEudendrium carneum\u003c/b\u003e [Species]\u003cbr\u003e\u003ca href=\"https://www.marinespecies.org/aphia.php?p=taxdetails\u0026id=117545\" target=\"_blank\"\u003eWoRMS #117545\u003c/a\u003e"}, {"color": "#C73E1D", "font": {"color": "#e0e0e0"}, "id": "family::eudendriidae", "label": "Eudendriidae", "shape": "dot", "size": 12, "title": "\u003cb\u003eEudendriidae\u003c/b\u003e [Family]"}, {"color": "#3B1F2B", "font": {"color": "#e0e0e0"}, "id": "order::anthoathecata", "label": "Anthoathecata", "shape": "dot", "size": 10, "title": "\u003cb\u003eAnthoathecata\u003c/b\u003e [Order]"}, {"color": "#44BBA4", "font": {"color": "#e0e0e0"}, "id": "phylum::cnidaria", "label": "Cnidaria", "shape": "dot", "size": 8, "title": "\u003cb\u003eCnidaria\u003c/b\u003e [Phylum]"}, {"color": "#A23B72", "font": {"color": "#e0e0e0"}, "id": "locality::poshitra", "label": "Poshitra", "shape": "dot", "size": 20, "title": "\u003cb\u003ePoshitra\u003c/b\u003e [Locality]"}, {"color": "#F18F01", "font": {"color": "#e0e0e0"}, "id": "habitat::coral_reef", "label": "Coral reef", "shape": "dot", "size": 18, "title": "\u003cb\u003eCoral reef\u003c/b\u003e [Habitat]"}, {"color": "#6B4226", "font": {"color": "#e0e0e0"}, "id": "paper::nagale__p__and_apte__d___2013___first_record_of_the_hydroid_eudendrium_carneum__", "label": "Nagale, P. and Apte, D. (2013). First re", "shape": "dot", "size": 8, "title": "\u003cb\u003eNagale, P. and Apte, D. (2013). First re\u003c/b\u003e [Paper]"}]);
+                  edges = new vis.DataSet([{"arrows": "to", "color": "#C73E1D", "dashes": false, "from": "species::eudendrium_carneum", "title": "BELONGS_TO", "to": "family::eudendriidae", "width": 1}, {"arrows": "to", "color": "#2E86AB", "dashes": false, "from": "species::eudendrium_carneum", "title": "FOUND_AT", "to": "locality::poshitra", "width": 2}, {"arrows": "to", "color": "#6B4226", "dashes": false, "from": "species::eudendrium_carneum", "title": "CITED_BY", "to": "paper::nagale__p__and_apte__d___2013___first_record_of_the_hydroid_eudendrium_carneum__", "width": 1}, {"arrows": "to", "color": "#C73E1D", "dashes": false, "from": "family::eudendriidae", "title": "BELONGS_TO", "to": "order::anthoathecata", "width": 1}, {"arrows": "to", "color": "#C73E1D", "dashes": false, "from": "order::anthoathecata", "title": "BELONGS_TO", "to": "phylum::cnidaria", "width": 1}, {"arrows": "to", "color": "#2E86AB", "dashes": false, "from": "locality::poshitra", "title": "FOUND_AT", "to": "habitat::coral_reef", "width": 2}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {"physics": {"enabled": true, "barnesHut": {"gravitationalConstant": -3000}}, "edges": {"smooth": {"type": "curvedCW", "roundness": 0.2}}};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+                  // make a custom popup
+                      var popup = document.createElement("div");
+                      popup.className = 'popup';
+                      popupTimeout = null;
+                      popup.addEventListener('mouseover', function () {
+                          console.log(popup)
+                          if (popupTimeout !== null) {
+                              clearTimeout(popupTimeout);
+                              popupTimeout = null;
+                          }
+                      });
+                      popup.addEventListener('mouseout', function () {
+                          if (popupTimeout === null) {
+                              hidePopup();
+                          }
+                      });
+                      container.appendChild(popup);
+
+
+                      // use the popup event to show
+                      network.on("showPopup", function (params) {
+                          showPopup(params);
+                      });
+
+                      // use the hide event to hide it
+                      network.on("hidePopup", function (params) {
+                          hidePopup();
+                      });
+
+                      // hiding the popup through css
+                      function hidePopup() {
+                          popupTimeout = setTimeout(function () { popup.style.display = 'none'; }, 500);
+                      }
+
+                      // showing the popup
+                      function showPopup(nodeId) {
+                          // get the data from the vis.DataSet
+                          var nodeData = nodes.get([nodeId]);
+                          popup.innerHTML = nodeData[0].title;
+
+                          // get the position of the node
+                          var posCanvas = network.getPositions([nodeId])[nodeId];
+
+                          // get the bounding box of the node
+                          var boundingBox = network.getBoundingBox(nodeId);
+
+                          //position tooltip:
+                          posCanvas.x = posCanvas.x + 0.5 * (boundingBox.right - boundingBox.left);
+
+                          // convert coordinates to the DOM space
+                          var posDOM = network.canvasToDOM(posCanvas);
+
+                          // Give it an offset
+                          posDOM.x += 10;
+                          posDOM.y -= 20;
+
+                          // show and place the tooltip.
+                          popup.style.display = 'block';
+                          popup.style.top = posDOM.y + 'px';
+                          popup.style.left = posDOM.x + 'px';
+                      }
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>

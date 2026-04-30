@@ -252,24 +252,42 @@ def gnfinder_find_in_text(text: str) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 #  GNV (GNA Verifier)  — primary verification
 # ─────────────────────────────────────────────────────────────────────────────
-
 def _gnv_batch(names: list[str]) -> dict[str, dict]:
-    """GNA Verifier batch call. Returns {name: result_dict}."""
+    """GNA Verifier batch call. Updated to use POST to avoid 405 errors."""
     if not names:
         return {}
     try:
-        r = requests.get(
+        # Change requests.get to requests.post
+        r = requests.post(
             _GNV_URL,
-            params={
-                "names":              "|".join(names),
-                "data_sources":       _GNV_SOURCES,
-                "with_vernaculars":   "true",
-                "with_species_group": "true",
-                "capitalize":         "true",
+            json={  # Move parameters into a JSON body
+                "names":              names, # Use a list, not a pipe-separated string
+                "dataSources":        [169, 1, 11, 12, 4], # Pass as list of IDs
+                "withVernaculars":    True,
+                "withSpeciesGroup":   True,
+                "capitalize":         True,
             },
             timeout=_TIMEOUT,
         )
         r.raise_for_status()
+        
+# def _gnv_batch(names: list[str]) -> dict[str, dict]:
+#     """GNA Verifier batch call. Returns {name: result_dict}."""
+#     if not names:
+#         return {}
+#     try:
+#         r = requests.get(
+#             _GNV_URL,
+#             params={
+#                 "names":              "|".join(names),
+#                 "data_sources":       _GNV_SOURCES,
+#                 "with_vernaculars":   "true",
+#                 "with_species_group": "true",
+#                 "capitalize":         "true",
+#             },
+#             timeout=_TIMEOUT,
+#         )
+#         r.raise_for_status()
         out: dict[str, dict] = {}
         for item in r.json().get("names", []):
             submitted = item.get("name", "")
