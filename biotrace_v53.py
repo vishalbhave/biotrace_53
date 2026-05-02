@@ -805,7 +805,9 @@ def _call_ollama(prompt, cfg):
     return resp.message.content if hasattr(resp,"message") else resp["message"]["content"]
 
 def _call_anthropic_via_ollama(prompt, cfg):
-    client = _anthropic_sdk.Anthropic(base_url=cfg.base_url, api_key="ollama")
+    # Use user-provided api_key from config; default to "ollama" for local instances if blank
+    key = cfg.api_key if cfg.api_key else "ollama"
+    client = _anthropic_sdk.Anthropic(base_url=cfg.base_url, api_key=key)
     return client.messages.create(model=cfg.model, max_tokens=2048,
            messages=[{"role":"user","content":prompt}]).content[0].text
 
@@ -2261,8 +2263,9 @@ with st.sidebar:
     _providers = ["Ollama (Local)", "Anthropic via Ollama", "OpenAI", "Gemini"]
     provider   = st.selectbox("Provider", _providers,key="_providers")
     api_key    = ""
-    if provider in ("OpenAI", "Gemini"):
-        api_key = st.text_input("API Key", type="password")
+    if provider in ("OpenAI", "Gemini", "Anthropic via Ollama"):
+        api_key = st.text_input("API Key", type="password",
+                                placeholder="ollama" if provider == "Anthropic via Ollama" else "")
     ollama_url = st.text_input("Ollama URL", "http://localhost:11434")
 
     # Model — live Ollama combobox or static input for cloud providers
