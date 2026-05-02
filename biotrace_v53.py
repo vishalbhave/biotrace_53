@@ -93,15 +93,15 @@ from biotrace_traiter_prepass import run_prepass, format_annotations_for_prompt
 if not st.session_state.get("_geo_patched"):
     patch_geocoding_cascade()
     st.session_state["_geo_patched"] = True
-    
-    
+
+
 from biotrace_dedup_patch import dedup_occurrences
 from biotrace_dedup_patch import suppress_regional_duplicates
 from biotrace_progress_logger import BioTraceLogger, render_species_progress_panel
 
 from biotrace_v56_integration import install_v56_patches
 install_v56_patches(meta_db_path=META_DB_PATH,
-                    kg_db_path=KG_DB_PATH, 
+                    kg_db_path=KG_DB_PATH,
                     wiki_root=WIKI_ROOT)
 
 
@@ -180,7 +180,7 @@ try:
 except Exception as _exc:
     _KG_ERROR = str(_exc)
     logger.warning("[v5] KnowledgeGraph import failed: %s", _exc)
- 
+
 _MB_AVAILABLE = False
 BioTraceMemoryBank = None
 _MB_ERROR = ""
@@ -191,7 +191,7 @@ try:
 except Exception as _exc:
     _MB_ERROR = str(_exc)
     logger.warning("[v5] MemoryBank import failed: %s", _exc)
- 
+
 _WIKI_AVAILABLE = False
 BioTraceWikiUnified = None
 try:
@@ -400,7 +400,17 @@ except ImportError:
 # except ImportError:
 #     logger.warning("[v5.4] biotrace_scientific_chunker.py not found")
 
+
+_AGENTIC_AVAILABLE = False
+try:
+    from biotrace_agentic_chunker import build_agentic_pipeline, records_to_dicts
+    _AGENTIC_AVAILABLE = True
+    logger.info("[v5.7] AgenticExtractionPipeline loaded")
+except ImportError:
+    logger.warning("[v5.7] biotrace_agentic_chunker.py not found")
+
 BiodiVizPipeline = None
+
 try:
     from biotrace_hf_ner import BiodiVizPipeline
     _BIODIVIZ_AVAILABLE = True
@@ -429,8 +439,8 @@ try:
     logger.info("[v5.5] pydantic-ai loaded — agentic extraction available")
 except Exception:
     logger.info("[v5.5] pydantic-ai not installed (pip install pydantic-ai) — optional")
-    
-    
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  PROMPTS  (v5.2 — high-recall, GNA-aware)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -597,27 +607,21 @@ def _to_float(val) -> float | None:
 
 def insert_occurrences(occurrences, file_hash, source_title, session_id):
 
-# def insert_occurrences(
-#     occurrences: list[dict],
-#     file_hash: str,
-#     source_title: str,
-#     session_id: str = "",
-# ) -> int:
     """Insert extracted occurrences into SQLite."""
     if not occurrences:
         return 0
-        
+
     con = sqlite3.connect(META_DB_PATH)
     inserted = 0
     for occ in occurrences:
         if not isinstance(occ, dict):
             continue
-            
+
         # BUG FIX: Now checking validName AND recordedName AND Recorded Name
         sp = (occ.get("validName") or occ.get("recordedName") or occ.get("Recorded Name", "")).strip()
         if not sp:
             continue
-            
+
         sampling = occ.get("Sampling Event") or occ.get("samplingEvent") or {}
         if isinstance(sampling, dict):
             sampling_str = json.dumps(sampling)
@@ -691,7 +695,7 @@ def insert_occurrences(occurrences, file_hash, source_title, session_id):
             session_id,
         ))
         inserted += 1
-        
+
     con.commit()
     con.close()
     return inserted
@@ -736,59 +740,6 @@ def pdf_to_markdown(pdf_path: str, parser: str = "pymupdf4llm") -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 #  LLM CALL  (multi-provider)
 # ─────────────────────────────────────────────────────────────────────────────
-# def call_llm(
-#     prompt: str,
-#     provider: str,
-#     model_sel: str,
-#     api_key: str = "",
-#     ollama_base_url: str = "http://localhost:11434",
-# ) -> str:
-#     if provider == "Ollama (Local)" and _OLLAMA_AVAILABLE:
-#         try:
-#             resp = _ollama.chat(
-#                 model=model_sel,
-#                 messages=[{"role": "user", "content": prompt}],
-#                 options={"num_predict": 2048},
-#             )
-#             return resp.message.content if hasattr(resp, "message") else resp["message"]["content"]
-#         except Exception as exc:
-#             logger.warning("[LLM] Ollama: %s", exc)
-#             return "[]"
-
-#     if provider == "Anthropic via Ollama" and _ANTHROPIC_AVAILABLE:
-#         try:
-#             client = _anthropic_sdk.Anthropic(base_url=ollama_base_url, api_key="ollama")
-#             resp   = client.messages.create(model=model_sel, max_tokens=2048,
-#                                              messages=[{"role":"user","content":prompt}])
-#             return resp.content[0].text
-#         except Exception as exc:
-#             logger.warning("[LLM] Anthropic/Ollama: %s", exc)
-#             return "[]"
-
-#     if provider == "OpenAI" and _OPENAI_AVAILABLE and api_key:
-#         try:
-#             client = _OpenAI(api_key=api_key)
-#             resp   = client.chat.completions.create(
-#                 model=model_sel,
-#                 messages=[{"role":"user","content":prompt}],
-#                 max_tokens=2048,
-#             )
-#             return resp.choices[0].message.content
-#         except Exception as exc:
-#             logger.warning("[LLM] OpenAI: %s", exc)
-#             return "[]"
-
-#     if provider == "Gemini" and _GEMINI_AVAILABLE and api_key:
-#         try:
-#             _genai.configure(api_key=api_key)
-#             return _genai.GenerativeModel(model_sel).generate_content(prompt).text
-#         except Exception as exc:
-#             logger.warning("[LLM] Gemini: %s", exc)
-#             return "[]"
-
-#     return '{"error": "No LLM provider configured"}'
-
-# ── LLM registry (replaces if-elif chain) ────────────────────────────────────
 from dataclasses import dataclass as _dc
 
 @_dc
@@ -974,171 +925,6 @@ def extract_thinker(
     return unique
 
 
-# def process_chunk(
-#     text, section_label, schema_prompt, cite_str,
-#     provider, model_sel, api_key, ollama_base_url,
-#     use_thinker, candidate_locs=None, log_cb=None):
-    
-#         nonlocal error_ct, skip_ct
-#         if not text.strip():
-#             skip_ct += 1
-#             return
-
-#         thinker_hints: list[str] = []
-#         species_hint_str = ""
-#         biodiviz_relations = []
-        
-#         pre = run_prepass(text)
-#         annotation_block = format_annotations_for_prompt(pre)
-#         augmented_text = annotation_block + "\n\n" + text
-#         text = augmented_text
-#         use_hf_ner = st.session_state.get("use_biodiviz", False) if 'st' in globals() else False
-
-#         if use_hf_ner and _BIODIVIZ_AVAILABLE:
-#             hf_pipeline = get_biodiviz_pipeline()
-#             if hf_pipeline:
-#                 hf_results = hf_pipeline.extract(text)
-#                 if hf_results["organisms"]:
-#                     species_hint_str = "\n".join(f"  • {n}" for n in hf_results["organisms"][:30])
-#                     log_cb(f"    [BiodiViz NER] Found {len(hf_results['organisms'])} organisms")
-#                 if hf_results["relations"]:
-#                     biodiviz_relations = hf_results["relations"]
-#                     log_cb(f"    [BiodiViz RE] Identified {len(biodiviz_relations)} location relations")
-        
-#         elif use_thinker:
-#             thinker_hints = extract_thinker(text, provider, model_sel, api_key, ollama_base_url, log_cb)
-#             if thinker_hints:
-#                 species_hint_str = "\n".join(f"  • {n}" for n in thinker_hints[:20])
-#                 log_cb(f"    [Thinker] Found {len(thinker_hints)} names pre-identified")
-
-#         species_hint = ""
-#         if species_hint_str:
-#             species_hint = (
-#                 "\n\n[CONFIRMED SPECIES INVENTORY — extract structured JSON for these]:\n"
-#                 + species_hint_str
-#             )
-
-#         re_hint = ""
-#         if biodiviz_relations:
-#             re_hint = (
-#                 "\n\n[CONFIRMED SPECIES-LOCALITY LINKS from NER — use these verbatimLocality values]:\n"
-#                 + "\n".join(f"  • {r}" for r in biodiviz_relations[:15])
-#             )
-
-#         locality_hint = ""
-#         if candidate_locs:
-#             locality_hint = (
-#                 "\n\n[PRE-LINKED LOCALITIES from Methods section]:\n"
-#                 + "\n".join(f"  • {l}" for l in candidate_locs[:5])
-#             )
-
-#         # if not species_hint and thinker_hints:
-#         #     species_hint = (
-#         #         "\n\n[THINKER PRE-INVENTORY — verify and extract JSON for EACH of these]:\n"
-#         #         + "\n".join(f"  • {n}" for n in thinker_hints[:30])
-#         #     )
-       
-        
-#         prompt = (
-#             f"{schema_prompt}"
-#             f"{locality_hint}"
-#             f"{species_hint}"
-#             f"{re_hint}"
-#             f"\n\nSECTION: \"{section_label}\"\n\nTEXT:\n{text}"
-#             f"\n\nCRITICAL: Output EXACTLY ONE valid JSON array. "
-#             f"No markdown code blocks, no prose, no explanations."
-#         )
-
-#         try:
-#             raw = call_llm(prompt, provider, model_sel, api_key, ollama_base_url)
-            
-#             # CRITICAL FIX: Strip reasoning blocks (avoid unescaped bracket interference)
-#             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-#             raw = re.sub(r"<\|thinking\|>.*?<\|/thinking\|>", "", raw, flags=re.DOTALL).strip()
-            
-#             # CRITICAL FIX: Extract full JSON securely without truncating nested arrays
-#             # json_match = re.search(r"'''(json)?\s*(.*?)\s*```", raw, re.DOTALL)
-#             json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', raw, re.DOTALL)
-
-            
-#             if json_match:
-#                 raw = json_match.group(1).strip()
-#                 # print(raw )
-                
-            
-#             else:
-#                 # Find an array of objects `[ { ... } ]`
-#                 array_match = re.search(r"(\[\s*\{.*\}\s*\])", raw, re.DOTALL)
-#                 if array_match:
-#                     raw = array_match.group(1).strip()
-#                 elif re.search(r"^\s*\[\s*\]\s*$", raw):
-#                     raw = "[]"
-#                 else:
-#                     # Last resort fallback: grab from the first to the last bracket
-#                     start = raw.find('[')
-#                     end = raw.rfind(']')
-#                     if start != -1 and end != -1 and end > start:
-#                         raw = raw[start:end+1]
-
-#             # Pydantic schema parse (v5.2)
-#             if _SCHEMA52_AVAILABLE and _parse_llm_response:
-#                 recs, errs = _parse_llm_response(raw, source_citation=cite_str)
-#                 if errs:
-#                     for e in errs:
-#                         log_cb(f"  [{section_label}] {e}", "warn")
-#                 # data = [r.to_dict() for r in recs] if recs else None
-#                 data = [r.to_dict() for r in recs] if recs is not None else None
-#                 # --- PATCH 18042026: Apply Life-Stage Filter ---
-#                 current_genus_ctx = scan_genus_context(text)
-#                 if data:
-#                     data, discarded = post_parse_lifestage_filter(data, current_genus_ctx)
-#                     if discarded:
-#                         log_cb(f"  [LS-filter] {len(discarded)} life-stage/abbreviated records discarded")
-#                 # -----------------------------------------------
-#                     data, loc_quarantined = post_parse_locality_filter(data)
-#                     if loc_quarantined:
-#                         log_cb(f"  [Loc-filter] {len(loc_quarantined)} morphology/habitat localities quarantined")
-                
-#                 if data is None and errs:
-#                     error_ct += 1
-#                     return
-#             else:
-#                 # Fallback: safe_parse_json
-#                 if _GNV_AVAILABLE and safe_parse_json:
-#                     data = safe_parse_json(raw)
-#                 else:
-#                     cleaned = raw.replace("```json","").replace("```","").strip()
-#                     try:
-#                         data = json.loads(cleaned)
-#                         if not isinstance(data, list):
-#                             data = None
-#                     except json.JSONDecodeError:
-#                         data = None
-
-#             if data is None:
-#                 error_ct += 1
-#                 log_cb(
-#                     f"  [{section_label}] JSON parse failed "
-#                     f"(preview: {raw[:60].replace(chr(10),' ')}…)",
-#                     "warn",
-#                 )
-#                 return
-
-#             for rec in data:
-#                 if isinstance(rec, dict):
-#                     if not rec.get("recordedName") and rec.get("Recorded Name"):
-#                         rec["recordedName"] = rec["Recorded Name"]
-#                     # Inject pre-linked locality if LLM left it blank
-#                     if (not rec.get("verbatimLocality") and candidate_locs):
-#                         rec["verbatimLocality"] = candidate_locs[0]
-
-#             results.extend(data)
-#             log_cb(f"  [{section_label}] {len(data)} records")
-
-#         except Exception as exc:
-#             error_ct += 1
-#             log_cb(f"  [{section_label}] error: {exc}", "warn")
-
 def build_schema_prompt(cite_str: str) -> str:
     """Assembles the full prompt from immutable parts — no global mutation."""
     base = _SCHEMA_PROMPT
@@ -1155,273 +941,6 @@ def build_schema_prompt(cite_str: str) -> str:
         )
     return base.replace("{document_citation_string}", cite_str)
 
-
-# def extract_occurrences(
-#     markdown_text:      str,
-#     doc_title:          str,
-#     provider:           str,
-#     model_sel:          str,
-#     api_key:            str,
-#     ollama_base_url:    str,
-#     log_cb,
-#     chunk_strategy:     str  = "section",
-#     chunk_chars:        int  = 6000,
-#     overlap_chars:      int  = 400,
-#     batch_mode:         bool = False,
-#     citation_string:    str  = "",          
-#     use_hierarchical:   bool = True,        
-#     use_thinker:        bool = True,
-#     use_scientific: bool = True,        
-#     use_auto_loc_ner:   bool = True,        
-#     geonames_db:        str  = "",
-# ) -> list[dict]:
-    
-
-
-    
-    
-#     if not markdown_text.strip():
-#         return []
-#     # #------------------------patched on 18042026
-#     # _SCHEMA_PROMPT = _SCHEMA_PROMPT.replace(
-#     #     'For EACH species x locality x event',
-#     #     PROMPT_LIFESTAGE_GUARD + 'For EACH species x locality x event'
-#     # )
-#     # #-------------------------------------------------------------
-#     # ── Citation injection ────────────────────────────────────────────────────
-#     cite_str = citation_string or doc_title or "Unknown Source"
-    
-#     # --- PATCH 18042026: Inject Lifestage Guard into Prompt ---
-    
-#     # global _SCHEMA_PROMPT  # <--- THIS LINE FIXES THE UNBOUNDLOCALERROR
-    
-#     # if PROMPT_LIFESTAGE_GUARD not in _SCHEMA_PROMPT:
-#     #     _SCHEMA_PROMPT = _SCHEMA_PROMPT.replace(
-#     #         'For EACH species x locality x event',
-#     #         PROMPT_LIFESTAGE_GUARD + 'For EACH species x locality x event'
-#     #     )
-    
-#     # if PROMPT_LOCALITY_GUARD not in _SCHEMA_PROMPT:
-#     #     _SCHEMA_PROMPT = _SCHEMA_PROMPT.replace(
-#     #         '  "verbatimLocality"   — Place name exactly as written.',
-#     #         PROMPT_LOCALITY_GUARD,
-#     #     )
-#     # # ---------------------------------------------------------
-#     # schema_prompt = _SCHEMA_PROMPT.replace("{document_citation_string}", cite_str)
-    
-#     schema_prompt = build_schema_prompt(cite_str)
-
-
-#     # ── Hierarchical chunking (v5.3) ──────────────────────────────────────────
-#     # if use_hierarchical and _HIER_CHUNKER_AVAILABLE and HierarchicalChunker:
-#     #     try:
-#     #         hier = HierarchicalChunker(db_path=os.path.join(DATA_DIR, "chunks.db"))
-#     #         doc_hash = hier.ingest(markdown_text, source_label=doc_title)
-#     #         stats    = hier.doc_stats(doc_hash)
-#     #         log_cb(
-#     #             f"[HChunk] {stats.get('sections',0)} sections, "
-#     #             f"{stats.get('paragraphs',0)} paragraphs, "
-#     #             f"{stats.get('sentences',0)} sentences "
-#     #             f"({stats.get('species_sentences',0)} with species signal)"
-#     #         )
-#     #         batches = list(hier.extraction_batches(
-#     #             doc_hash,
-#     #             window_sentences = 5,
-#     #             max_batch_chars  = chunk_chars,
-#     #             species_only     = True,
-#     #         ))
-#     #         hier.close()
-#     #         use_flat_chunks = False
-#     #         log_cb(f"[HChunk] {len(batches)} extraction batches")
-#     #     except Exception as exc:
-#     #         log_cb(f"[HChunk] Error: {exc} — falling back to flat chunks", "warn")
-#     #         batches         = []
-#     #         use_flat_chunks = True
-#     # else:
-#     #     batches         = []
-#     #     use_flat_chunks = True
-
-#     # # ── Flat chunk fallback ───────────────────────────────────────────────────
-#     # if use_flat_chunks:
-#     #     if _CHUNKER_AVAILABLE and DocumentChunker:
-#     #         chunker = DocumentChunker(
-#     #             strategy      = chunk_strategy,
-#     #             chunk_chars   = chunk_chars,
-#     #             overlap_chars = overlap_chars,
-#     #             model_name    = model_sel,
-#     #             batch_mode    = batch_mode,
-#     #         )
-#     #         flat_chunks, c_stats = chunker.chunk_markdown(markdown_text, source_label=doc_title)
-#     #         log_cb(
-#     #             f"[Chunk] {c_stats.total_chunks} chunks | strategy={c_stats.strategy_used}"
-#     #         )
-#     #     else:
-#     #         step = max(chunk_chars - overlap_chars, 1000)
-#     #         class _FC:
-#     #             def __init__(self, i, t):
-#     #                 self.chunk_id=i; self.text=t; self.section=f"Chunk {i+1}"
-#     #                 self.has_species=True; self.candidate_localities=[]
-#     #         flat_chunks = [
-#     #             _FC(i, markdown_text[s:s+chunk_chars])
-#     #             for i, s in enumerate(range(0, min(len(markdown_text), 20000), step))
-#     #         ]
-#     #         log_cb(f"[Chunk] {len(flat_chunks)} fallback chunks")
-    
-#     # ── Chunking — Priority 1: Scientific paper chunker (NEW v5.4) ───────────
-#     use_flat_chunks = True
-#     batches         = []
-
-#     if st.session_state.get("use_scientific", False) and _SCICHUNKER_AVAILABLE:
-#         try:
-#             from biotrace_scientific_chunker import ScientificPaperChunker
-#             sc      = ScientificPaperChunker(
-#                 chunk_chars=chunk_chars,
-#                 overlap_chars=overlap_chars,
-#             )
-#             batches        = sc.chunk(markdown_text, source_label=doc_title)
-#             use_flat_chunks = False
-#             log_cb(f"[SciChunk] {len(batches)} context-aware batches")
-#         except Exception as exc:
-#             log_cb(f"[SciChunk] {exc} — falling back", "warn")
-#             batches         = []
-#             use_flat_chunks = True
-
-#     # ── Priority 2: Hierarchical chunker (v5.3) ───────────────────────────────
-#     if use_flat_chunks and use_hierarchical and _HIER_CHUNKER_AVAILABLE and HierarchicalChunker:
-#         try:
-#             hier     = HierarchicalChunker(db_path=os.path.join(DATA_DIR, "chunks.db"))
-#             doc_hash = hier.ingest(markdown_text, source_label=doc_title)
-#             stats    = hier.doc_stats(doc_hash)
-#             log_cb(
-#                 f"[HChunk] {stats.get('sections',0)} sections, "
-#                 f"{stats.get('paragraphs',0)} paragraphs, "
-#                 f"{stats.get('sentences',0)} sentences "
-#                 f"({stats.get('species_sentences',0)} with species signal)"
-#             )
-#             batches = list(hier.extraction_batches(
-#                 doc_hash,
-#                 window_sentences = 5,
-#                 max_batch_chars  = chunk_chars,
-#                 species_only     = True,
-#             ))
-#             hier.close()
-#             use_flat_chunks = False
-#             log_cb(f"[HChunk] {len(batches)} extraction batches")
-#         except Exception as exc:
-#             log_cb(f"[HChunk] Error: {exc} — falling back to flat chunks", "warn")
-#             batches         = []
-#             use_flat_chunks = True
-
-#     # ── Priority 3: Flat chunk fallback ──────────────────────────────────────
-#     if use_flat_chunks:
-#         if _CHUNKER_AVAILABLE and DocumentChunker:
-#             chunker = DocumentChunker(
-#                 strategy      = chunk_strategy,
-#                 chunk_chars   = chunk_chars,
-#                 overlap_chars = overlap_chars,
-#                 model_name    = model_sel,
-#                 batch_mode    = batch_mode,
-#             )
-#             flat_chunks, c_stats = chunker.chunk_markdown(
-#                 markdown_text, source_label=doc_title
-#             )
-#             log_cb(
-#                 f"[Chunk] {c_stats.total_chunks} chunks | "
-#                 f"strategy={c_stats.strategy_used}"
-#             )
-#         else:
-#             step = max(chunk_chars - overlap_chars, 1000)
-#             class _FC:
-#                 def __init__(self, i, t):
-#                     self.chunk_id = i; self.text = t
-#                     self.section  = f"Chunk {i+1}"
-#                     self.has_species = True
-#                     self.candidate_localities = []
-#             flat_chunks = [
-#                 _FC(i, markdown_text[s:s+chunk_chars])
-#                 for i, s in enumerate(
-#                     range(0, min(len(markdown_text), 20000), step)
-#                 )
-#             ]
-#             log_cb(f"[Chunk] {len(flat_chunks)} fallback chunks")
-
-#     # ── LLM extraction loop ───────────────────────────────────────────────────
-#     results:  list[dict] = []
-#     error_ct = skip_ct  = 0
-
-    
-
-#     # Process hierarchical batches
-#     if batches:
-#         for batch in batches:
-#             process_chunk(
-#                 text=text,
-#                 section_label=section_label,
-#                 schema_prompt=schema_prompt,
-#                 cite_str=cite_str,
-#                 provider=provider,
-#                 model_sel=model_sel,
-#                 api_key=api_key,
-#                 ollama_base_url=ollama_base_url,
-#                 use_thinker=use_thinker,
-#                 candidate_locs=pre_locs,
-#                 log_cb=log_cb,
-#             )
-#             log_cb(f"[{batch}] of {len(batches)} extraction batches")
-#     else:
-#         # Flat chunk fallback
-#         for chunk in flat_chunks:
-#             text = getattr(chunk, "text", str(chunk))
-#             if len(flat_chunks) > 10 and not getattr(chunk, "has_species", True):
-#                 skip_ct += 1
-#                 continue
-#             section_label = getattr(chunk, "section", f"chunk {getattr(chunk,'chunk_id',0)+1}")
-#             pre_locs      = list(getattr(chunk, "candidate_localities", []))
-#             _process_batch_text(text, section_label, pre_locs)
-
-#     log_cb(
-#         f"[Extract] Raw total: {len(results)} | errors: {error_ct} | skipped: {skip_ct}"
-#     )
-    
-#     # [ENHANCEMENT: biotrace_dedup_patch] — 3-stage dedup pipeline
-#     # Stage 1+2: exact-key dedup + locality-containment merge.
-#     # suppress_regional_duplicates (Stage 3) MUST run AFTER dedup_occurrences
-#     # so it can see site-level records before removing region-level duplicates.
-#     if dedup_occurrences and len(results) > 1:
-#         results, n_removed = dedup_occurrences(results)
-#         if n_removed:
-#             log_cb(f"[Dedup] Removed {n_removed} duplicate entries (stages 1+2)")
-
-#     # Stage 3: regional suppression — must follow stages 1+2
-#     # from biotrace_dedup_patch import suppress_regional_duplicates
-#     results, n_suppressed = suppress_regional_duplicates(results)
-#     if n_suppressed:
-#         log_cb(f"[Dedup/Stage3] Suppressed {n_suppressed} regional-level duplicates")
-
-    
-    
-    
-
-    
-#     # ── Auto Locality NER enrichment (v5.3) ───────────────────────────────────
-#     if use_auto_loc_ner and _LOC_NER_AVAILABLE and LocalityNER:
-#         try:
-#             log_cb("[LocalityNER] Auto-enriching localities…")
-#             lner = LocalityNER(
-#                 geonames_db   = geonames_db or GEONAMES_DB if os.path.exists(GEONAMES_DB) else "",
-#                 pincode_txt   = PINCODE_TXT if os.path.exists(PINCODE_TXT) else "",
-#                 use_nominatim = False,   # Fast pass — Nominatim optional
-#             )
-#             results = lner.enrich_occurrences(results, markdown_text, proximity_chars=600)
-#             filled  = sum(1 for r in results if isinstance(r,dict) and
-#                          r.get("decimalLatitude") and r.get("decimalLongitude"))
-#             log_cb(f"[LocalityNER] {filled}/{len(results)} records now have coordinates")
-#         except Exception as exc:
-#             log_cb(f"[LocalityNER] Auto-enrich: {exc}", "warn")
-
-#     return results
-
-# ── Typed return value for process_chunk ─────────────────────────────────────
 
 from dataclasses import dataclass as _dc, field as _f
 
@@ -1607,6 +1126,7 @@ def extract_occurrences(
     citation_string:  str  = "",
     use_hierarchical: bool = True,
     use_scientific:   bool = True,    # NEW — ScientificPaperChunker
+    use_agentic:      bool = False,   # NEW — AgenticExtractionPipeline
     use_thinker:      bool = True,
     use_auto_loc_ner: bool = True,
     geonames_db:      str  = "",
@@ -1619,9 +1139,9 @@ def extract_occurrences(
     """
     if not markdown_text.strip():
         return []
- 
+
     cite_str = citation_string or doc_title or "Unknown Source"
- 
+
     # ── Prompt assembly — no global mutation ─────────────────────────────────
     # Build a local copy of the prompt; the module-level _SCHEMA_PROMPT is
     # never modified — local copy only.
@@ -1637,7 +1157,31 @@ def extract_occurrences(
             PROMPT_LOCALITY_GUARD,
         )
     schema_prompt = _prompt_base.replace("{document_citation_string}", cite_str)
- 
+
+
+    # ── Agentic Chunking Pipeline (v5.7) ─────────────────────────────────────
+    if use_agentic and _AGENTIC_AVAILABLE:
+        try:
+            log_cb("[Agentic] Starting AgenticExtractionPipeline...")
+            pipeline = build_agentic_pipeline(
+                meta_db_path    = META_DB_PATH,
+                wiki_root       = WIKI_ROOT if 'WIKI_ROOT' in globals() else "./wiki",
+                provider        = provider,
+                model_sel       = model_sel,
+                ollama_url      = ollama_base_url,
+                use_wiki_writer = True, # Enables wiki writing side by side
+                external_llm_fn = lambda p: call_llm(p, provider, model_sel, api_key, ollama_base_url),
+                log_cb          = log_cb,
+            )
+            records = pipeline.run(
+                markdown_text    = markdown_text,
+                source_citation  = cite_str,
+                log_cb           = log_cb,
+            )
+            return records_to_dicts(records)
+        except Exception as exc:
+            log_cb(f"[Agentic] Pipeline failed: {exc} — falling back to standard extraction", "warn")
+
     # ── Chunking — 4-priority waterfall ──────────────────────────────────────
     #
     #  Each priority populates EITHER `batches` (objects with .context)
@@ -1649,11 +1193,11 @@ def extract_occurrences(
     #  Priority 2  HierarchicalChunker     — 3-level section/para/sentence.
     #  Priority 3  DocumentChunker         — strategy-based flat chunks.
     #  Priority 4  Naive fixed-size slices — last resort, always works.
- 
+
     batches     = []
     flat_chunks = []
     use_flat    = True
- 
+
     # Priority 1: ScientificPaperChunker
     if use_scientific and _SCICHUNKER_AVAILABLE:
         try:
@@ -1671,7 +1215,7 @@ def extract_occurrences(
         except Exception as exc:
             log_cb(f"[SciChunk] {exc} — falling back to HierarchicalChunker", "warn")
             batches  = []
- 
+
     # Priority 2: HierarchicalChunker
     if use_flat and use_hierarchical and _HIER_CHUNKER_AVAILABLE and HierarchicalChunker:
         try:
@@ -1696,7 +1240,7 @@ def extract_occurrences(
         except Exception as exc:
             log_cb(f"[HChunk] {exc} — falling back to flat chunks", "warn")
             batches  = []
- 
+
     # Priority 3: DocumentChunker flat
     if use_flat:
         if _CHUNKER_AVAILABLE and DocumentChunker:
@@ -1717,7 +1261,7 @@ def extract_occurrences(
         else:
             # Priority 4: naive fixed-size slices
             step = max(chunk_chars - overlap_chars, 1000)
- 
+
             class _FC:
                 def __init__(self, i, t):
                     self.chunk_id            = i
@@ -1726,7 +1270,7 @@ def extract_occurrences(
                     self.has_species         = True
                     self.candidate_localities = []
                     self.candidate_species   = []
- 
+
             flat_chunks = [
                 _FC(i, markdown_text[s: s + chunk_chars])
                 for i, s in enumerate(
@@ -1734,7 +1278,7 @@ def extract_occurrences(
                 )
             ]
             log_cb(f"[Chunk] {len(flat_chunks)} naive fallback chunks")
- 
+
     # ── Extraction loop — delegates entirely to process_chunk() ──────────────
     #
     #  process_chunk() owns: pre-pass → NER/Thinker → LLM → JSON clean
@@ -1743,53 +1287,53 @@ def extract_occurrences(
     #
     #  This loop owns:  chunk iteration, skip/error counting, result collection.
     #  No inlined LLM calls.  No inlined JSON parsing.
- 
+
     results:  list[dict] = []
     error_ct = skip_ct   = 0
- 
+
     all_chunks = batches if batches else flat_chunks
- 
+
     for chunk in all_chunks:
- 
+
         text           = getattr(chunk, "context", None) or getattr(chunk, "text", str(chunk))
         section_label  = getattr(chunk, "section", f"chunk-{getattr(chunk, 'chunk_id', 0) + 1}")
         candidate_locs = list(getattr(chunk, "candidate_localities", []))
- 
+
         # Skip non-species chunks in large documents (LLM call budget)
         if len(all_chunks) > 10 and not getattr(chunk, "has_species", True):
             skip_ct += 1
             continue
-    
-    
+
+
         result = process_chunk(
-            text=text, 
+            text=text,
             section_label=section_label,
-            schema_prompt=schema_prompt, 
+            schema_prompt=schema_prompt,
             cite_str=cite_str,
-            provider=provider, 
+            provider=provider,
             model_sel=model_sel,
-            api_key=api_key, 
+            api_key=api_key,
             ollama_base_url=ollama_base_url,
-            use_thinker=use_thinker, 
-            candidate_locs=candidate_locs, 
+            use_thinker=use_thinker,
+            candidate_locs=candidate_locs,
             log_cb=log_cb,
         )
- 
+
         if result.status == "skip":
             skip_ct += 1
         elif result.status == "error":
             error_ct += 1
         else:
             results.extend(result.records)
- 
+
     log_cb(
         f"[Extract] Raw total: {len(results)} "
         f"| errors: {error_ct} | skipped: {skip_ct}"
     )
- 
+
     # ── Dedup pipeline (stages 1-3) ───────────────────────────────────────────
     # suppress_regional_duplicates is imported at module top — no late import.
- 
+
     removed_records: list[dict] = []
     if dedup_occurrences and len(results) > 1:
         before = list(results)
@@ -1810,7 +1354,7 @@ def extract_occurrences(
     # Feed dedup result into tracker
     if hasattr(log_cb, 'log_dedup_result'):
         log_cb.log_dedup_result(results, removed_records)
- 
+
     # ── Auto Locality NER enrichment (v5.3) ───────────────────────────────────
     if use_auto_loc_ner and _LOC_NER_AVAILABLE and LocalityNER:
         try:
@@ -1831,7 +1375,7 @@ def extract_occurrences(
             log_cb(f"[LocalityNER] {filled}/{len(results)} records have coordinates")
         except Exception as exc:
             log_cb(f"[LocalityNER] {exc}", "warn")
- 
+
     return results
 
 
@@ -1899,45 +1443,24 @@ def geocode_occurrences(occurrences: list[dict], log_cb) -> list[dict]:
 
 
 # @st.cache_resource
-# def get_knowledge_graph() -> "BioTraceKnowledgeGraph | None":
-#     if not _KG_AVAILABLE:
-#         return None
-#     try:
-#         return BioTraceKnowledgeGraph(KG_DB_PATH)
-#     except Exception as exc:
-#         logger.error("[v5] KG init: %s", exc)
-#         return None
-
-
-# @st.cache_resource
-# def get_memory_bank() -> "BioTraceMemoryBank | None":
-#     if not _MB_AVAILABLE:
-#         return None
-#     try:
-#         return BioTraceMemoryBank(MB_DB_PATH)
-#     except Exception as exc:
-#         logger.error("[v5] MemoryBank init: %s", exc)
-#         return None
-
-
 from typing import NamedTuple
- 
+
 class _ModuleResult(NamedTuple):
     """Thin wrapper so tabs can show real errors, not generic 'Install' messages."""
     instance: object        # None if unavailable
     error:    str = ""      # human-readable error string
- 
+
     def __bool__(self):
         return self.instance is not None
- 
+
     def __getattr__(self, name):
         # Proxy attribute access to the wrapped instance so callers like
         # `kg.stats()` still work without unwrapping.
         if self.instance is not None:
             return getattr(self.instance, name)
         raise AttributeError(f"Module unavailable ({self.error}): .{name}")
- 
- 
+
+
 @st.cache_resource
 def get_knowledge_graph() -> _ModuleResult:
     if not _KG_AVAILABLE:
@@ -1947,8 +1470,8 @@ def get_knowledge_graph() -> _ModuleResult:
     except Exception as exc:
         logger.error("[v5] KG init: %s", exc)
         return _ModuleResult(None, str(exc))
- 
- 
+
+
 @st.cache_resource
 def get_memory_bank() -> _ModuleResult:
     if not _MB_AVAILABLE:
@@ -1958,20 +1481,10 @@ def get_memory_bank() -> _ModuleResult:
     except Exception as exc:
         logger.error("[v5] MemoryBank init: %s", exc)
         return _ModuleResult(None, str(exc))
- 
+
 
 
 # @st.cache_resource
-# def get_wiki() -> "BioTraceWiki | None":
-#     if not _WIKI_AVAILABLE:
-#         return None
-#     try:
-#         return BioTraceWiki(WIKI_ROOT)
-#     except Exception as exc:
-#         logger.error("[v5] Wiki init: %s", exc)
-#         return None
-
-#290426
 @st.cache_resource
 def get_wiki() -> "BioTraceWikiUnified | None":
     """Returns the singleton BioTraceWikiUnified instance (versioned SQLite store)."""
@@ -2006,54 +1519,6 @@ def get_wiki_agent() -> "OllamaWikiAgent | None":
         return None
 
 
-# def ingest_into_v5_systems(
-#     occurrences: list[dict],
-#     citation: str,
-#     session_id: str,
-#     log_cb,
-#     provider: str = "",
-#     model_sel: str = "",
-#     api_key: str  = "",
-#     ollama_base_url: str = "http://localhost:11434",
-#     update_wiki_narratives: bool = False,
-#     use_kg: bool = True,   # FIX 2: respect sidebar toggles
-#     use_mb: bool = True,
-#     use_wiki: bool = True,
-# ):
-# """Push verified/geocoded occurrences into KG + Memory Bank + Wiki."""
-#     llm_fn = None
-#     if update_wiki_narratives:
-#         def llm_fn(prompt: str) -> str:
-#             return call_llm(prompt, provider, model_sel, api_key, ollama_base_url)
-
-#     # Knowledge Graph
-#     kg = get_knowledge_graph() if use_kg else None  # FIX 2: respect toggle
-#     if kg:
-#         try:
-#             added = kg.ingest_occurrences(occurrences)
-#             log_cb(f"[KG] +{added} nodes. Total: {kg.stats()['total_nodes']}")
-#         except Exception as exc:
-#             log_cb(f"[KG] Ingest error: {exc}", "warn")
-
-#     # Memory Bank
-#     mb = get_memory_bank() if use_mb else None  # FIX 2: respect toggle
-#     if mb:
-#         try:
-#             r = mb.store_occurrences(
-#                 occurrences, session_id=session_id,
-#                 session_title=citation, source_file=session_id,
-#             )
-#             log_cb(
-#                 f"[MemoryBank] inserted={r['inserted']} merged={r['merged']} "
-#                 f"conflicts={r['conflicts']}"
-#             )
-#         except Exception as exc:
-#             log_cb(f"[MemoryBank] Store error: {exc}", "warn")
-# NEW — add chunk_text: str = "" parameter:
-# """
-
-
-#29042026
 def ingest_into_v5_systems(
     occurrences: list[dict],
     citation: str,
@@ -2112,9 +1577,9 @@ def ingest_into_v5_systems(
     #         )
     #         log_cb(f"[Wiki] Updated: {counts}")
     #     except Exception as exc:
-    #         log_cb(f"[Wiki] Update error: {exc}", "warn")    
-    
-    
+    #         log_cb(f"[Wiki] Update error: {exc}", "warn")
+
+
     # Wiki (BioTraceWikiUnified — versioned, CSS-styled, LLM-enhanced)
     wiki = get_wiki() if use_wiki else None
     if wiki:
@@ -2129,20 +1594,20 @@ def ingest_into_v5_systems(
             log_cb(f"[Wiki] Updated: {counts}")
 
             # ── NEW: Auto-Run Wiki Architect Agent on Docling Chunks ──
-            # This uses the Docling sections (chunk_text) to automatically 
+            # This uses the Docling sections (chunk_text) to automatically
             # run the agent loop for newly extracted species.
             if update_wiki_narratives and chunk_text and _WIKI_AGENT_AVAILABLE:
                 agent = get_wiki_agent()
                 if agent:
                     # Get unique species names from this batch
                     unique_sps = list({
-                        (o.get("validName") or o.get("recordedName")) 
-                        for o in occurrences 
+                        (o.get("validName") or o.get("recordedName"))
+                        for o in occurrences
                         if (o.get("validName") or o.get("recordedName"))
                     })
-                    
+
                     log_cb(f"[WikiAgent] Auto-running architect on {len(unique_sps)} species using Docling sections...")
-                    
+
                     for sp in unique_sps:
                         try:
                             # Invoke the primary agent extraction method
@@ -2170,7 +1635,7 @@ def ingest_into_v5_systems(
     #         log_cb(f"[Wiki] Updated: {counts}")
     #     except Exception as exc:
     #         log_cb(f"[Wiki] Update error: {exc}", "warn")
-    
+
     #29042026
     # Wiki (BioTraceWikiUnified — versioned, CSS-styled, LLM-enhanced)
     wiki = get_wiki() if use_wiki else None
@@ -2186,9 +1651,9 @@ def ingest_into_v5_systems(
             log_cb(f"[Wiki] Updated: {counts}")
         except Exception as exc:
             log_cb(f"[Wiki] Update error: {exc}", "warn")
-            
-            
-    
+
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2285,7 +1750,7 @@ with st.sidebar:
     with st.expander("🧩 Chunking & Extraction Options", expanded=False):
         use_thinker_cb = st.checkbox("extract_thinker pre-pass", value=True,
                                 help="LLM inventory step before structured extraction")
-        
+
         use_biodiviz = st.checkbox(
             "Use BiodiViz NER + RE",
             value=_BIODIVIZ_AVAILABLE,
@@ -2295,11 +1760,11 @@ with st.sidebar:
     st.divider()
     # Gemma 4 / large-context hint
     _is_large_ctx = any(x in model_sel.lower() for x in ["gemma4","gemma3","llama3.3","qwen2.5"])
-    
+
     if _is_large_ctx:
         st.caption("🚀 Large-context model — batch mode enabled")
     st.divider()
-    
+
     # Chunking strategy
     st.subheader("📐 Chunking Strategy")
     chunk_strategy = st.selectbox(
@@ -2418,7 +1883,7 @@ with tabs[0]:
     if uploaded:
         if 'auto_title' not in st.session_state or st.session_state.get('last_uploaded') != uploaded.name:
             st.session_state['last_uploaded'] = uploaded.name
-            # st.session_state['auto_title'] = uploaded.name 
+            # st.session_state['auto_title'] = uploaded.name
             st.session_state['auto_title'] = ""   # don't pre-fill with filename
             if uploaded.name.lower().endswith('.pdf'):
                 file_bytes = uploaded.getvalue()
@@ -2432,7 +1897,7 @@ with tabs[0]:
                         st.session_state['auto_title'] = extracted
                 except Exception as e:
                     logger.warning(f"Title extraction failed: {e}")
-                    
+
             # PATCHED: P6-pdf-backup-gate — use original filename; skip if already saved
             backup_dir = os.path.join(DATA_DIR, "backup_manuscripts")
             os.makedirs(backup_dir, exist_ok=True)
@@ -2510,13 +1975,19 @@ with tabs[0]:
             # v5.5: Hierarchical chunking is always-on internally (Priority-2 fallback).
             # The user checkbox has been removed to simplify the UI.
             use_hierarchical = _HIER_CHUNKER_AVAILABLE   # always True when module present
-        
+
             use_scientific = st.checkbox(
                 "Scientific paper chunker (v5.4)",
                 value=_SCICHUNKER_AVAILABLE,
                 key="use_scientific",
                 help="Injects Methods-section localities into Results chunks — "
                     "fixes species/locality split across section boundaries",
+            )
+            use_agentic = st.checkbox(
+                "Agentic chunking (v5.7)",
+                value=_AGENTIC_AVAILABLE,
+                key="use_agentic",
+                help="Uses pydantic-ai agent to chunk text based on semantic boundaries.",
             )
             use_thinker_cb = st.checkbox("extract_thinker pre-pass", value=True,
                                           help="LLM inventory step before structured extraction")
@@ -2621,7 +2092,7 @@ with tabs[0]:
         #     with log_container:
         #         icon = {"ok":"✅","warn":"⚠️","error":"❌"}.get(lvl,"ℹ️")
         #         st.write(f"{icon} {msg}")
-        
+
         _schema_errors: list[str] = []
         log_inst  = BioTraceLogger(log_container, _schema_errors)
         log_cb    = log_inst   # drop-in: same __call__ signature
@@ -2633,14 +2104,14 @@ with tabs[0]:
             clean_title = st.session_state.get('auto_title', uploaded.name)
             ts = int(time.time())
             suffix = Path(uploaded.name).suffix
-            
+
             # PATCHED: P7-pdf-hash-filename — content hash prevents re-extraction duplicates
             safe_title = re.sub(r'[\\/*?:"<>|]', "_", clean_title or Path(uploaded.name).stem)
             # Pre-compute hash here so we can use it in the filename
             _pre_hash = hashlib.sha256(uploaded.getvalue()).hexdigest()[:8]
             filename = f"{safe_title}_{_pre_hash}{suffix}"
             tmp_path = os.path.join(PDF_DIR, filename)
-            
+
             raw_bytes = uploaded.getvalue()
             with open(tmp_path, "wb") as f:
                 f.write(raw_bytes)
@@ -2684,7 +2155,7 @@ with tabs[0]:
                         log_cb(f"[Meta] Partial metadata only (source={meta.source})", "warn")
                         extracted_title = st.session_state.get('auto_title', '') or doc_title
                         citation_str = meta.citation_string or extracted_title or uploaded.name
-                    
+
                     if not doc_title and extracted_title:
                         doc_title = extracted_title
 
@@ -2703,7 +2174,7 @@ with tabs[0]:
 
             if not doc_title:
                 doc_title = st.session_state.get('auto_title', '') or citation_str or uploaded.name
-            
+
             log_cb(f"[Extract] Text: {len(md_text):,} chars | Citation: {citation_str[:60]}…")
 
             # ── Step 3: LLM Extraction (hierarchical) ─────────────────────────
@@ -2721,6 +2192,7 @@ with tabs[0]:
                     citation_string  = citation_str,
                     use_hierarchical = use_hierarchical,
                     use_scientific   = use_scientific,
+                    use_agentic      = use_agentic,
                     use_thinker      = use_thinker_cb,
                     use_auto_loc_ner = use_auto_loc and _LOC_NER_AVAILABLE,
                     geonames_db      = GEONAMES_DB,
@@ -2739,10 +2211,10 @@ with tabs[0]:
             except ImportError:
                 log_cb("[Agent] biotrace_agent_loop.py not found — standard extraction", "warn")
                 occurrences = _run_standard_extraction(md_text)
-            
+
             if hasattr(log_inst, 'log_extraction_result'):
                 log_inst.log_extraction_result("document", occurrences)
-                
+
             with progress_placeholder.container():
                 render_species_progress_panel(log_inst.tracker)
 
@@ -2770,7 +2242,7 @@ with tabs[0]:
                 ]
                 log_cb(f"[Filter] Primary only: {len(occurrences)}/{before}")
 
-            
+
             # PATCHED-R2: R1b-hitl-checkpoint — save checkpoint before gate fires
             if st.session_state.get("use_hitl_approval", True):
                 try:
@@ -2828,21 +2300,21 @@ with tabs[0]:
                     meta_db_path=META_DB_PATH,
                 )
                 log_cb(f"[RE] Extracted {len(relation_triples)} relation triples")
-            
-            
-            
+
+
+
             # ── Step 7: Geocoding cascade ─────────────────────────────────────
             occurrences = geocode_occurrences(occurrences, log_cb)
             if hasattr(log_inst, 'log_geocoded'):
                 log_inst.log_geocoded(occurrences)
-            
+
             # After: occurrences = geocode_occurrences(occurrences, log_cb)
             from biotrace_postprocessing import run_postprocessing
             occurrences, pp_summary = run_postprocessing(
                     occurrences, citation_str=citation_str,
                     wiki_root=WIKI_ROOT, geonames_db=GEONAMES_DB,
                     use_nominatim=True, log_cb=log_cb,)
-                
+
             if pp_summary["conflicts"]:
                 st.warning(f"{len(pp_summary['conflicts'])} unresolved conflicts — see Schema tab")
             st.session_state["pp_conflicts"]    = pp_summary["conflicts"]
@@ -2867,7 +2339,7 @@ with tabs[0]:
             # ── Step 8: Save to SQLite ────────────────────────────────────────
             n = insert_occurrences(occurrences, file_hash, citation_str, session_id)
             log_cb(f"[DB] {n} records saved (session {session_id})")
-            
+
             if hasattr(log_inst, 'log_saved'):
                 log_inst.log_saved(n)
             # Final panel render with all stages populated
@@ -2881,7 +2353,7 @@ with tabs[0]:
 
             with progress_placeholder.container():
                 render_species_progress_panel(log_inst.tracker)
-            
+
             log_cb(f"[DB] {n} records saved (session {session_id})")
 
             # ── Step 9: v5 knowledge systems ─────────────────────────────────
@@ -2895,7 +2367,7 @@ with tabs[0]:
                     use_kg=use_kg, use_mb=use_mb, use_wiki=use_wiki,  # FIX 2c
                 )
 
-            
+
             # [ENHANCEMENT: biotrace_kg_spatio_temporal] — Stage 7 (Hyper-Extract-inspired)
             # Incrementally upserts species nodes (lat/lon bbox, temporal range) and
             # relation edges into kg_nodes / kg_edges SQLite tables (FTS5-queryable).
@@ -2909,8 +2381,8 @@ with tabs[0]:
                 f"[SpatioKG] Updated: {len(occurrences)} species nodes, "
                 f"{len(relation_triples)} relation edges"
             )
-            
-            
+
+
             # ── Step 10: Save CSV ─────────────────────────────────────────────
             df = pd.DataFrame(occurrences)
             csv_path = os.path.join(CSV_DIR, f"{session_id}.csv")
@@ -2970,14 +2442,14 @@ with tabs[3]:
         "Edit Flag (Primary/Secondary/Uncertain), Validation (Accept/Reject/Review), "
         "Notes, and Coordinates. Changes are saved back to the database immediately."
     )
-    
+
     # [ENHANCEMENT: biotrace_hitl_geocoding] — HITL geocoding tab with full
     # multi-store sync (SQLite + KG + MemoryBank + Wiki). All 4 path args required.
     from biotrace_hitl_geocoding import render_hitl_geocoding_tab
     render_hitl_geocoding_tab(META_DB_PATH, KG_DB_PATH, MB_DB_PATH, WIKI_ROOT)
-    
+
     with st.expander("old editor"):
-        
+
         if not _ENH_AVAILABLE or _render_verification_table is None:
             st.info("Install `biotrace_v5_enhancements.py` to enable this tab.")
         else:
@@ -3022,7 +2494,7 @@ with tabs[3]:
                     and (not _sel_flag or o.get("occurrenceType","") in _sel_flag)
                     and float(o.get("matchScore",0) or 0) >= _min_score
                 ]
-                
+
                 _missing = _df_v[_df_v["decimalLatitude"].isna() | _df_v["decimalLongitude"].isna()]
                 col_stat1, col_stat2, col_stat3 = st.columns(3)
                 col_stat1.metric("Total records shown", len(_filt_occs))
@@ -3048,14 +2520,14 @@ with tabs[3]:
                 #                     st.rerun()
                 #                 except Exception as _ge:
                 #                     st.error(f"Geocoding failed: {_ge}")
-                
+
                 if len(_missing) > 0:
                     with st.expander(f"⚠️ {len(_missing)} records missing coordinates — click to geocode"):
                         _nom_btn = st.button(
                             "🌍 Geocode missing via GeoNames + Nominatim",
                             key="geocode_missing_btn_verif",
                         )
-                        
+
                         # Check if button clicked AND geocoder is ready
                         if _nom_btn and _GEOCODER_AVAILABLE:
                             with st.spinner("Geocoding..."):
@@ -3065,37 +2537,37 @@ with tabs[3]:
                                         pincode_txt=PINCODE_TXT if os.path.exists(PINCODE_TXT) else "",
                                         use_nominatim=True,
                                     )
-                                    
+
                                     n_updated = geo.batch_geocode_db(META_DB_PATH)
-                                    
+
                                     if n_updated > 0:
                                         # 1. Show a persistent notification
                                         st.toast(f"✅ Success! Geocoded {n_updated} records.", icon="🌍")
-                                        
+
                                         # 2. IMPORTANT: Clear cache so new data is loaded on rerun
                                         st.cache_data.clear()
-                                        
+
                                         # 3. Slight delay so the user registers the success state
                                         time.sleep(1.2)
-                                        
+
                                         # 4. Refresh to hide this expander and show new data
                                         st.rerun()
                                     else:
                                         st.warning("⚠️ No records were updated. Check connection or address format.")
-                                        
+
                                 except Exception as _ge:
                                     st.error(f"Geocoding failed: {_ge}")
 
                 # Create dataframe for the editor which includes both verification and coordinate columns
                 _df_for_editor = pd.DataFrame(_filt_occs)
-                
+
                 _edited_df = st.data_editor(
                     _df_for_editor,
                     column_config={
                         "id":               st.column_config.NumberColumn("ID", disabled=True),
                         "recordedName":     st.column_config.TextColumn("Species", disabled=True),
                         "verbatimLocality": st.column_config.TextColumn(
-                                                "Locality", 
+                                                "Locality",
                                                 help="Click a cell to edit the text",
                                                 required=True,    # Prevents empty submissions
                                                 default="",       # Default text for new rows
@@ -3202,7 +2674,7 @@ with tabs[3]:
                                 st.error(f"Delete failed: {_de}")
                         else:
                             st.warning("Enter at least one record ID to delete.")
-                        
+
                 _with_coords = _edited_df.dropna(subset=["decimalLatitude","decimalLongitude"])
                 if not _with_coords.empty:
                     st.map(_with_coords.rename(columns={
@@ -3305,7 +2777,7 @@ with tabs[5]:
     # if not mb:
     #     st.warning("Install `biotrace_memory_bank.py` alongside this file.")
     mb = get_memory_bank()
-    
+
     if not mb:
         st.error(f"⚠️ Memory Bank unavailable")
         with st.expander("Show error details"):
