@@ -543,13 +543,11 @@ def _build_lead_from_chunks(species_name: str, chunks: list[dict]) -> str:
     )
 
 
-def _patch_no_lead_section():
+def patch_unified_page_lead_section():
     """
     Monkey-patch render_unified_page in BioTraceWikiUnified so that
-    instead of showing "No lead section yet — enhance with a literature
-    extraction pass" it either:
-      a) auto-fills the lead from ChunkStore, or
-      b) shows a "Generate from chunks" button that triggers WikiAutoRunner.
+    it automatically generates a lead section from ChunkStore if missing,
+    never showing the empty "No lead section yet" banner.
     """
     try:
         import biotrace_wiki_unified as _wmod
@@ -558,12 +556,8 @@ def _patch_no_lead_section():
         _orig_render = _Cls.render_unified_page
 
         def _patched_render(self, species_name: str, *args, **kwargs):
-            # Call the original
-            _orig_render(self, species_name, *args, **kwargs)
-
-            # If the article exists but has an empty lead, offer to fill it
+            # [Auto-FIX] If lead section is missing, try to auto-generate it from chunks
             try:
-                import streamlit as st
                 art = self.get_species_article(species_name)
                 if art:
                     secs = art.get("sections", {})
@@ -572,11 +566,8 @@ def _patch_no_lead_section():
                         if store:
                             chunks = store.get_chunks(species_name)
                             if chunks:
-                                if st.button(
-                                    "⚡ Generate lead section from stored chunks",
-                                    key=f"gen_lead_{species_name}",
-                                ):
-                                    lead = _build_lead_from_chunks(species_name, chunks)
+                                lead = _build_lead_from_chunks(species_name, chunks)
+                                if lead:
                                     secs["lead"] = lead
                                     art["sections"] = secs
                                     self._write(
@@ -584,18 +575,30 @@ def _patch_no_lead_section():
                                         self._slug(species_name),
                                         species_name,
                                         art,
-                                        change_note="Auto-generated lead from chunk store",
+                                        change_note="[Auto] Generated lead from chunk store",
                                     )
-                                    st.success("Lead section generated. Reloading…")
-                                    st.rerun()
-                            else:
-                                # No chunks — show runner button
-                                st.info(
-                                    "💡 No source chunks stored yet. Process a PDF first, "
-                                    "or use the **Wiki Auto-Runner** panel to trigger a wiki pass."
-                                )
+                                    logger.info("[v57/FIX-2] Auto-generated lead for %s", species_name)
             except Exception as e:
-                logger.debug("[v57/FIX-2] lead patch inner: %s", e)
+                logger.debug("[v57/FIX-2] lead auto-gen failed: %s", e)
+
+            # Call the original (it will now see the generated lead if it was missing)
+            res = _orig_render(self, species_name, *args, **kwargs)
+
+            # Fallback UI if still no lead and no chunks
+            try:
+                import streamlit as st
+                art = self.get_species_article(species_name)
+                if art and not art.get("sections", {}).get("lead", "").strip():
+                    store = _get_chunk_store()
+                    if not store or not store.get_chunks(species_name):
+                        st.info(
+                            "💡 No source chunks stored yet. Process a PDF first, "
+                            "or use the **Wiki Auto-Runner** panel to trigger a wiki pass."
+                        )
+            except Exception:
+                pass
+
+            return res
 
         _Cls.render_unified_page = _patched_render
         logger.info("[v57/FIX-2] render_unified_page patched for lead-section ✅")
@@ -1089,7 +1092,7 @@ def install_v57_patches(
     _patch_broadcast_update()
 
     # ── FIX-2 (continued): lead section patch ─────────────────────────────────
-    _patch_no_lead_section()
+    patch_unified_page_lead_section()
 
     logger.info("━━━ BioTrace v5.7 patches complete ✅ ━━━")
 
@@ -1100,6 +1103,7 @@ def install_v57_patches(
 
 __all__ = [
     "install_v57_patches",
+    "patch_unified_page_lead_section",
     "store_chunks_for_species",
     "render_wiki_runner_panel",
     "ChunkStore",
