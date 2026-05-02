@@ -2028,6 +2028,7 @@ with tabs[0]:
         _h_hash  = st.session_state.pop("_hitl_pending_hash",     "")
         _h_sess  = st.session_state.pop("_hitl_pending_session",  "session_resumed")
         _h_cite  = st.session_state.pop("_hitl_pending_citation", uploaded.name)
+        _h_text  = st.session_state.pop("_hitl_pending_text",     "")
         st.session_state.pop("_hitl_pending_title",       None)
         st.session_state.pop("_hitl_pending_occurrences", None)
 
@@ -2060,7 +2061,7 @@ with tabs[0]:
                 provider=provider, model_sel=model_sel,
                 api_key=api_key, ollama_base_url=ollama_url,
                 update_wiki_narratives=wiki_narr,
-                chunk_text=md_text,
+                chunk_text=_h_text,
                 use_kg=use_kg, use_mb=use_mb, use_wiki=use_wiki,
             )
 
@@ -2259,6 +2260,7 @@ with tabs[0]:
                     st.session_state["_hitl_pending_session"]     = session_id
                     st.session_state["_hitl_pending_citation"]    = citation_str
                     st.session_state["_hitl_pending_title"]       = doc_title
+                    st.session_state["_hitl_pending_text"]        = md_text
 
                     approved = render_approval_table(occurrences)
                     if approved is None:
@@ -2365,6 +2367,7 @@ with tabs[0]:
                     provider=provider, model_sel=model_sel,
                     api_key=api_key, ollama_base_url=ollama_url,
                     update_wiki_narratives=wiki_narr,
+                    chunk_text=md_text,
                     use_kg=use_kg, use_mb=use_mb, use_wiki=use_wiki,  # FIX 2c
                 )
 
