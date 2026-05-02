@@ -73,7 +73,7 @@ import hashlib
 import logging
 import os
 import re
-import _re
+import re as _re
 
 import sqlite3
 from dataclasses import dataclass, field
@@ -450,6 +450,27 @@ class HierarchicalChunker:
             (doc_hash,),
         ).fetchall()
 
+        # Pre-fetch all sentences for this document to avoid N+1 queries
+        # sentence_row: (chunk_id, text, char_start, char_end, has_species, has_locality, parent_para)
+        all_sentences = self._conn.execute(
+            """SELECT chunk_id, text, char_start, char_end, has_species, has_locality, parent_para
+               FROM chunks
+               WHERE doc_hash=? AND level=2
+               ORDER BY chunk_id""",
+            (doc_hash,),
+        ).fetchall()
+
+        # Index sentences by parent_para (first 300 chars)
+        sents_by_para: dict[str, list[tuple]] = {}
+        # Also keep a flat list for range-based fallback and nearby localities
+        # We need chunk_id to be the index for fast lookup if possible, but they might not be contiguous 0..N
+        # Using a list and knowing they are ordered by chunk_id.
+        for s_row in all_sentences:
+            p_para = s_row[6]
+            if p_para not in sents_by_para:
+                sents_by_para[p_para] = []
+            sents_by_para[p_para].append(s_row)
+
         for para_row in paragraphs:
             p_id, p_section, p_text, p_start, p_end, p_page, p_sp, p_lo = para_row
 
@@ -458,33 +479,29 @@ class HierarchicalChunker:
 
             # Get sentences belonging to this paragraph
             # (match by parent_para truncated to 300 chars)
-            sents = self._conn.execute(
-                """SELECT chunk_id, text, char_start, has_species, has_locality
-                   FROM chunks
-                   WHERE doc_hash=? AND level=2
-                     AND parent_para=?
-                   ORDER BY chunk_id""",
-                (doc_hash, p_text[:300]),
-            ).fetchall()
+            sents = sents_by_para.get(p_text[:300], [])
 
             if not sents:
                 # Fallback: get sentences within char range
-                sents = self._conn.execute(
-                    """SELECT chunk_id, text, char_start, has_species, has_locality
-                       FROM chunks
-                       WHERE doc_hash=? AND level=2
-                         AND char_start >= ? AND char_end <= ?
-                       ORDER BY chunk_id""",
-                    (doc_hash, p_start, p_end),
-                ).fetchall()
+                sents = [
+                    s for s in all_sentences
+                    if s[2] >= p_start and s[3] <= p_end
+                ]
 
             if not sents:
                 continue
 
             # Pre-link localities from nearby sentences
+            # sents is list of (chunk_id, text, char_start, char_end, has_species, has_locality, parent_para)
             all_sent_ids = [s[0] for s in sents]
             mid_id = all_sent_ids[len(all_sent_ids) // 2]
-            pre_locs = self._nearby_localities(doc_hash, mid_id, window_sentences)
+
+            # Optimized nearby localities: filter from all_sentences in memory
+            # chunk_id is sequential within level, so we can use it for range filtering
+            pre_locs = [
+                s[1] for s in all_sentences
+                if s[5] == 1 and max(0, mid_id - window_sentences) <= s[0] <= mid_id + window_sentences
+            ]
 
             # Pre-detect species candidates from paragraph
             sp_candidates = _SPECIES_SIGNAL.findall(p_text)
@@ -507,7 +524,7 @@ class HierarchicalChunker:
                         candidate_localities= pre_locs,
                         candidate_species   = sp_candidates,
                         char_start          = sub_sents[0][2] if sub_sents else p_start,
-                        char_end            = sub_sents[-1][2] if sub_sents else p_end,
+                        char_end            = sub_sents[-1][3] if sub_sents else p_end,
                         page_est            = p_page,
                     )
             else:
